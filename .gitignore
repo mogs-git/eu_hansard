@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+data/
+notes/
+old/
+global_functions/
+
+eu_hansard.Rproj
