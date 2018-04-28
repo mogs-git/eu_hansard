@@ -1,0 +1,80 @@
+---
+title: "Brexit: A Textual Analysis"
+output: html_notebook
+---
+
+```{r load in the data, echo = FALSE}
+full_speeches <- readRDS("..//data//full_speeches.RDAT")
+library(ggpubr)
+```
+
+
+### The first thing we will look at is who turned up for the debate. 
+
+
+```{r team_composition, echo = FALSE}
+full_speeches %>% group_by(party, gender) %>% summarise(n = n()) %>%
+  ggplot(aes(party, n)) +
+  geom_col(aes(fill = gender)) +
+  ylab("# members") +
+  scale_y_continuous(breaks = seq(0,30,5))
+```
+
+Most of the lords and ladies who showed up were from the conservative party, with labour following closely behind and center bench and lib dem also boasting a significant turnout. Labour and the liberal democrats brought most of the female representation in the house. Ninety three lords and ladies in total turned up to discuss the EU hansard bill.
+
+### How often did lords and ladies from each party speak compared to how often we would expect if each speaker was given an equal chance?
+
+```{r num_speeches, echo = FALSE}
+appearances_tib <- readRDS("..//data//appearances.RDAT")
+
+# how often did each party speak?
+
+speeches_by_party <- appearances_tib %>% group_by(party) %>% summarise(n_speeches = n())
+
+# how often would you expect each to speak based on number of lords present?
+
+exp_speeches <- appearances_tib %>% distinct(name, party) %>% group_by(party) %>% summarise(n = n()) %>%
+  mutate(total_speeches = 247, nprob = n/sum(n), expected_nspeeches = round(total_speeches*nprob)) 
+
+speeches_by_party %>% left_join(exp_speeches, by = "party") %>% select(party,n_speeches,expected_nspeeches) %>% 
+  gather(speech_type, count, n_speeches, expected_nspeeches) %>%
+  ggplot(aes(party, count)) + geom_col(aes(fill = speech_type), position = "dodge")
+```
+We can work out how many speeches you would expect each party to give by multiplying the total number of speeches given by the proportion of lords from each party as a fraction of the total number of lords. For instance, there were 27 tory lords, so 27/93 = 0.29 of the speakers present are tories, so if there were 247 speeches throughout the day we would expect 0.29 * 247 = 72 speeches, assuming every speaker has an equal chance of speaking. Of course, this isn't the case and tory lords give more speeches than we would expect, closer to 100, meaning speakers from other parties give disproportionately less speeches than we would expect given equal chance. 
+
+### Let's dig into gender representation a bit more:
+
+```{r gender}
+words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+  group_by(r, name) %>% summarise(word_count = n())
+
+words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name))
+
+words_per_lord %<>% add_gender()
+words_per_lord %<>% mutate(name =  as.factor(name))
+wordCountPlot <- words_per_lord %>% ggplot(aes(x = fct_reorder(name, word_count), y = word_count)) + geom_col(aes(fill = gender)) 
+
+wordExpectationPlot <- words_per_lord %>% group_by(gender) %>% summarise(total_words = sum(word_count), total_speakers = length(name)) %>% ungroup() %>%
+  mutate(tot_s = sum(total_speakers), tot_w = sum(total_words), exp = tot_w*(total_speakers/tot_s)) %>% gather(type, count, total_words, exp) %>%
+  ggplot(aes(gender, count)) + geom_col(aes(fill = type), position = 'dodge')
+
+speechesExpectationPlot <- appearances_tib %>% group_by(gender) %>% summarise(n_speeches = length(name), n_speakers = length(unique(name))) %>% ungroup() %>% 
+  mutate(tot_s = sum(n_speeches), exp = tot_s * n_speakers/sum(n_speakers)) %>%
+  gather(type, count, n_speeches, exp) %>%
+  ggplot(aes(gender, count)) + geom_col(aes(fill = type), position = 'dodge')
+
+ggarrange(ggarrange(speechesExpectationPlot, wordExpectationPlot, ncol = 2), wordCountPlot, nrow = 2)
+```
+
+Females made up 24% of the total number of MPs present. There were 22 female speakers compared to 71 male speakers. They gave about 16 less speeches than would be expected given their turnout, which would make a significant difference to the 42 speeches females actually gave. They made up for this by saying about 2000 words more than we would expect in total given their turnout, on average saying more words per speech compared to the men. It is also apparent that females were well spread out in the distribution of total words used. However, given the simple sparsity of turnout of female MPs, the loss of a single vocal Baroness could quickly result in females having much less of a say than expected.
+
+
+
+
+To go:
+write word count/gender stuff
+topic modelling of speeches
+context analysis (use of words by each speaker in context of surrounding words)
+paired network analysis
+
+
