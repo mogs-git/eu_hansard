@@ -1,5 +1,15 @@
 # load ----
 pacman::p_load(tidyverse, stringr, forcats, purrr, magrittr, tidytext, reshape2, wordcloud)
+full_speeches <- readRDS("data//full_speeches.RDAT")
+appearances_tib <- readRDS("data//appearances.RDAT")
+
+tidy_dtm <- appearances_tib %>% 
+  mutate(r = row_number()) %>% 
+  unnest_tokens(word, speeches) %>% 
+  group_by(name, r, word) %>% 
+  summarise(count = length(word)) %>%
+  arrange(r)
+
 eu <- read_file("data/European Union (Notification of Withdrawal) Bill 2017-03-01 (1).txt")
 source('scripts\\main_src.R')
 
@@ -456,13 +466,39 @@ tidy_dtm$doc_word_frequency %>% sort() %>% as.tibble() %>% mutate(r = row_number
 # counting even more things ----
 
 # Number of questions
-full_speeches$all_speeches[[5]] %>% str_count("\\?")
-full_speeches$all_speeches[[2]]  %>% str_locate("\\?")
-full_speeches$all_speeches[[2]]  %>% str_sub(3000, str_length(.))
-full_speeches$all_speeches[[5]]
 
 full_speeches %>% group_by(name) %>% mutate(numQs = str_count(all_speeches, "\\?")) %>% View()
 
+# Number of unique words used
+
+total_words <- unique(tidy_dtm$word)
+tidy_dtm %>% group_by(word) %>% mutate(total_count = n()) %>%
+  group_by(name) %>% summarise(total_words = sum(count), num_unique = sum(total_count == count), prop_unique = num_unique/total_words) %>%
+  arrange(desc(prop_unique))
+
+# Number of times other lords are mentioned
+
+surname <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+)") 
+surname <- surname[,2] %>% str_to_lower()
+for (i in seq_along(surname)) {
+  surname[i] <- str_c("\\s", surname[i], "\\W")
+}
+
+surname <- surname[which(surname != '\\sO\\W' & surname != '\\sDe\\W')]
+pronouns <- c('his lordship', 'the baroness', 'the lord', 'the minister', 'her ladyship', 'the noble\\s\\w+.(?!\\slord)', 'reverend primate')
+named_references <- c(surname, pronouns) 
+named_references_reg <- str_c("(", str_c(named_references, collapse = "|"), ")")
+
+# Problems: Some names match other words e.g. 'true', 'hunt'. double barrelled names. 
+# instances where someone refers to 'the noble lord, lord blencathra' will be counted twice
+# could solve this using negative lookahead on 'the noble'
+appearances_tib %<>% mutate(speeches = str_to_lower(speeches)) %>% filter(!is.na(speeches))
+
+appearances_tib %>% group_by(name) %>% mutate(n_references = str_count(speeches, named_references_reg)) %>% View()
+
+s <- appearances_tib %>% filter(name == 'Lord Winston') %>% pull(speeches) 
+str_view_all(s, named_references_reg)
+str_view_all(s, "o(?!r)")
 # want to find number of qs per x many words
 
 # type of question word used
