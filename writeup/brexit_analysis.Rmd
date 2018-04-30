@@ -9,7 +9,7 @@ library(ggpubr)
 ```
 
 
-### The first thing we will look at is who turned up for the debate. 
+### The first thing we will look at is who turned up for the debate.
 
 
 ```{r team_composition, echo = FALSE}
