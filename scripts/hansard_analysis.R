@@ -469,6 +469,37 @@ tidy_dtm$doc_word_frequency %>% sort() %>% as.tibble() %>% mutate(r = row_number
 
 full_speeches %>% group_by(name) %>% mutate(numQs = str_count(all_speeches, "\\?")) %>% View()
 
+s <- full_speeches %>% filter(name == "Lord Oates") %>% pull(all_speeches)
+qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\?)"
+str_extract_all(s, "\\w+\\?")
+str_extract_all(s, "\\?")
+initial_matches <- str_extract_all(s, qwords)[[1]]
+initial_match_indexes_start <- which(initial_matches == "?") - 1
+initial_match_indexes_end <- which(initial_matches == "?")
+qword_positions <- str_locate_all(s, qwords)[[1]]
+str_sub(s, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
+
+# Pull questions
+pull_questions <- function(string) {
+  # pull the questions asked in a string, and the question word used.
+  qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\Wdoes|\\?)"
+  initial_matches <- str_extract_all(string, qwords)[[1]]
+  initial_match_indexes_start <- which(initial_matches == "?") - 1
+  initial_match_indexes_end <- which(initial_matches == "?")
+  qword_positions <- str_locate_all(string, qwords)[[1]]
+  question_sentence <- str_sub(string, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
+  question_word <- initial_matches[initial_match_indexes_start]
+  
+  sentence_matches <- str_extract_all(string, "\\.|\\:|\\?")[[1]]
+  sentence_matches_start <- which(sentence_matches == "?") - 1
+  sentence_matches_end <- which(sentence_matches == "?")
+  qsentence_positions <- str_locate_all(string, "\\.|\\:|\\?")[[1]]
+  question_sentence_full <- str_sub(string, qsentence_positions[sentence_matches_start], qsentence_positions[sentence_matches_end])
+  
+  return(tibble(question_word, question_sentence, question_sentence_full))
+}
+
+pull_questions(s) %>% View()
 # Number of unique words used
 
 total_words <- unique(tidy_dtm$word)
@@ -485,7 +516,7 @@ for (i in seq_along(surname)) {
 }
 
 surname <- surname[which(surname != '\\sO\\W' & surname != '\\sDe\\W')]
-pronouns <- c('his lordship', 'the baroness', 'the lord', 'the minister', 'her ladyship', 'the noble\\s\\w+.(?!\\slord)', 'reverend primate')
+pronouns <- c('his lordship', 'the baroness', 'the lord', 'the minister', 'her ladyship', 'the noble lords?(?!(.{0,4}lord))', 'reverend primate')
 named_references <- c(surname, pronouns) 
 named_references_reg <- str_c("(", str_c(named_references, collapse = "|"), ")")
 
@@ -497,19 +528,21 @@ appearances_tib %<>% mutate(speeches = str_to_lower(speeches)) %>% filter(!is.na
 appearances_tib %>% group_by(name) %>% mutate(n_references = str_count(speeches, named_references_reg)) %>% View()
 
 s <- appearances_tib %>% filter(name == 'Lord Winston') %>% pull(speeches) 
+s <- appearances_tib$speeches[[1]] 
+s <- "The noble Lord, Lord Howard, and his noble steed carrying him, are followed by Lord Chubbington and his noble donkey, Assworth. There was supposedly a third lord, but the noble Lord being too drunk, did not arrive for the adventure."
 str_view_all(s, named_references_reg)
-str_view_all(s, "o(?!r)")
+str_extract_all(s, named_references_reg)
+str_view_all(s, "noble Lords?(?!(.{0,2}Lord))")
 # want to find number of qs per x many words
 
-# type of question word used
-qwords <- "(do|what|where|who|why|when|how|if|has|will)"
-q_pattern <- str_c("(:|;|\\.|\\?|\") ", qwords, ".*?\\?")
-q_pattern <- str_c(qwords, "(?!.*", qwords, ").*\\?")
-full_speeches$all_speeches[[2]] %>% str_to_lower() %>% str_extract_all(q_pattern)
-full_speeches$all_speeches[[2]] %>% str_to_lower() %>% str_extract_all("what(?!.*what).*\\?")
+# word associations
 
-full_speeches %>% mutate(num_qs = map(all_speeches, str_count, "\\?")) %>% View()
-full_speeches$all_speeches[[1]] %>% str_to_lower() %>% str_extract_all(str_c("(?=<", qwords, ")\\?"))
+assoc_pattern <- function(word) {str_c("\\.[^.]+\\W", word, "(\\.|\\W[^.]+?(?=\\.))")}
+str_extract_all(s, assoc_pattern("leave"))
 
-full_speeches$all_speeches[[66]] %>% str_to_lower() %>% str_extract_all(str_c("(?<=will).*\\?"))
+eu_docs <- map(appearances_tib$speeches, str_extract_all, assoc_pattern("eu"))
+head(eu_docs)
+eu_docs %<>% flatten() %>% flatten() 
 
+tibble(doc = unlist(eu_docs)) %>% mutate(r = row_number()) %>% group_by(r) %>% unnest_tokens(word, doc) %>% 
+  anti_join(stop_words) %>% group_by(word) %>% summarise(count = n()) %>% arrange(desc(count)) %>% View()
