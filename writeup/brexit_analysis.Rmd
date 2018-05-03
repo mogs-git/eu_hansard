@@ -20,7 +20,7 @@ full_speeches %>% group_by(party, gender) %>% summarise(n = n()) %>%
   scale_y_continuous(breaks = seq(0,30,5))
 ```
 
-Most of the lords and ladies who showed up were from the conservative party, with labour following closely behind and center bench and lib dem also boasting a significant turnout. Labour and the liberal democrats brought most of the female representation in the house. Ninety three lords and ladies in total turned up to discuss the EU hansard bill.
+Most of the lords and ladies who showed up were from the conservative party, with labour following closely behind and crossbench and lib dem also boasting a significant turnout. Labour and the liberal democrats brought most of the female representation in the house. Ninety three lords and ladies in total turned up to discuss the EU hansard bill.
 
 ### How often did lords and ladies from each party speak compared to how often we would expect if each speaker was given an equal chance?
 

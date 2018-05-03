@@ -70,6 +70,8 @@ words_per_speech
 words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name))
 words_per_lord 
 
+words_per_speech %>% left_join(distinct(appearances_tib, name, party)) %>% ggplot(aes(r, word_count)) + geom_col(aes(fill = party == "(Con)"))
+
 # probably quite a bit of error given that numbers etc haven't been removed.
 # would be interesting to look at who 'gives the most numbers' etc...
 words_per_lord %<>% add_gender()
