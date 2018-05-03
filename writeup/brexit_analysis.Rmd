@@ -5,6 +5,8 @@ output: html_notebook
 
 ```{r load in the data, echo = FALSE}
 full_speeches <- readRDS("..//data//full_speeches.RDAT")
+party_id <- full_speeches %>% distinct(name, party)
+main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
 library(ggpubr)
 ```
 
@@ -46,7 +48,7 @@ We can work out how many speeches you would expect each party to give by multipl
 
 ```{r gender}
 words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
-  group_by(r, name) %>% summarise(word_count = n())
+  group_by(r, name) %>% summarise(word_count = n()) %>% filter(!is.na(name)) %>% ungroup() %>% add_gender()
 
 words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name))
 
@@ -62,6 +64,17 @@ speechesExpectationPlot <- appearances_tib %>% group_by(gender) %>% summarise(n_
   mutate(tot_s = sum(n_speeches), exp = tot_s * n_speakers/sum(n_speakers)) %>%
   gather(type, count, n_speeches, exp) %>%
   ggplot(aes(gender, count)) + geom_col(aes(fill = type), position = 'dodge')
+
+words_per_speech %>% group_by(gender) %>% arrange(gender, word_count) %>% mutate(r = row_number(), p = r/length(r)) %>% ggplot(aes(word_count, p)) + geom_line(aes(colour = gender)) + geom_point(aes(colour = gender))
+
+words_per_lord %>% group_by(gender) %>% arrange(gender, word_count) %>% mutate(r = row_number(), p = r/length(r)) %>% ggplot(aes(word_count, p)) + geom_line(aes(colour = gender)) + geom_point(aes(colour = gender))
+
+words_per_speech %<>% left_join(party_id)
+words_per_speech %>% filter(party %in% main_parties) %>% group_by(party) %>% arrange(party, word_count) %>% mutate(r = row_number(), p = r/length(r)) %>% ggplot(aes(word_count, p)) + geom_line(aes(colour = party)) + geom_point(aes(colour = party))
+
+words_per_lord %>% left_join(party_id) %>% group_by(party) %>% summarise(total_words = sum(word_count), total_speakers = length(name)) %>% ungroup() %>%
+  mutate(tot_s = sum(total_speakers), tot_w = sum(total_words), exp = tot_w*(total_speakers/tot_s)) %>% gather(type, count, total_words, exp) %>%
+  ggplot(aes(party, count)) + geom_col(aes(fill = type), position = 'dodge')
 
 ggarrange(ggarrange(speechesExpectationPlot, wordExpectationPlot, ncol = 2), wordCountPlot, nrow = 2)
 ```
