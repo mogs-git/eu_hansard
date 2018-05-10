@@ -51,39 +51,45 @@ saveRDS(speech_tib, "data//full_speeches.RDAT")
 
 # team composition ----
 
-speech_tib %>% group_by(party, gender) %>% summarise(n = n()) %>%
+# PLOT: Number of members of each party coloured by gender.
+full_speeches %>% group_by(party, gender) %>% summarise(n = n()) %>%
   ggplot(aes(party, n)) +
   geom_col(aes(fill = gender)) +
   ylab("# members") +
   scale_y_continuous(breaks = seq(0,30,5))
 
-full_speeches
-
-appearances_tib <- readRDS("data//appearances.RDAT")
 
 # word counts by gender ----
 
-words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
-  group_by(r, name) %>% summarise(word_count = n())
-words_per_speech
+# Count number of words in each speech (SUMMARY)
+(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+  group_by(r, name) %>% summarise(word_count = n()))
 
-words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name))
-words_per_lord 
+# Count total number of words said by each lord
+(words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name)))
 
-words_per_speech %>% left_join(distinct(appearances_tib, name, party)) %>% ggplot(aes(r, word_count)) + geom_col(aes(fill = party == "(Con)"))
+# Look for pattern in order of speeches
+main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
+ 
+seq_plot <- words_per_speech %>% left_join(distinct(appearances_tib, name, party)) %>% mutate(party = ifelse(party %!in% main_parties, "other", party)) %>% ggplot(aes(r, word_count)) + geom_col(aes(fill = party), width = 1) + scale_fill_brewer(palette = "Set1")
+seq_plot #+ coord_cartesian(xlim = c(200,250))
+appearances_tib %>% mutate(id = row_number(), party = ifelse(party %!in% main_parties, "other", party)) %>% ggplot(aes(id, 1)) + geom_col(aes(fill = party)) + scale_fill_brewer(palette = "Spectral")
 
-# probably quite a bit of error given that numbers etc haven't been removed.
-# would be interesting to look at who 'gives the most numbers' etc...
+# running mean of speech lengths
+wcs <- words_per_speech$word_count
+running_mean <- NULL
+for (i in seq_along(wcs)) {
+  running_mean[i] <- mean(wcs[1:i])
+}
+rm_tib <- tibble(id = 1:247, running_mean)
+ggplot(rm_tib, aes(id, running_mean)) + geom_point() + geom_line()
+
+# gender distribution in sorted word counts
 words_per_lord %<>% add_gender()
 words_per_lord %<>% mutate(name =  as.factor(name))
 words_per_lord %>% ggplot(aes(x = fct_reorder(name, word_count), y = word_count)) + geom_col(aes(fill = gender)) 
 
 # ladies look evenly distributed among speech lengths
-words_per_lord %>% group_by(gender) %>% summarise(total_words = sum(word_count), total_speakers = length(name)) %>% ungroup() %>%
-  mutate(tot_s = sum(total_speakers), tot_w = sum(total_words), exp = tot_w*(total_speakers/tot_s))
-
-appearances_tib %>% group_by(gender) %>% summarise(n_speeches = length(name), n_speakers = length(unique(name))) %>% ungroup() %>% 
-  mutate(tot_s = sum(n_speeches), exp = tot_s * n_speakers/sum(n_speakers))
 
 # how often did each party speak?
 
@@ -98,8 +104,10 @@ speeches_by_party %>% left_join(exp_speeches) %>% select(party,n_speeches,expect
   gather(speech_type, count, n_speeches, expected_nspeeches) %>%
   ggplot(aes(party, count)) + geom_col(aes(fill = speech_type), position = "dodge")
 
-head_vs_hayt <- speech_tib %>% mutate(chars_used = str_length(all_speeches)) %>% arrange(desc(chars_used)) %>% top_n(2)
-speech_tib %>% mutate(words_used = sum(str_detect(all_speeches, "[^ ]+"), na.rm = TRUE)) %>% select(words_used)
+# Word cloud comparison of speaker pair
+
+head_vs_hayt <- full_speeches %>% mutate(chars_used = str_length(all_speeches)) %>% arrange(desc(chars_used)) %>% top_n(2)
+full_speeches %>% mutate(words_used = sum(str_detect(all_speeches, "[^ ]+"), na.rm = TRUE)) %>% select(words_used)
 
 head_vs_hayt %>% 
   unnest_tokens(word, all_speeches) %>%
@@ -123,9 +131,13 @@ hh_tidy %>% acast(word ~ name, value.var = "n", fill = 0) %>%
 
 # What about the order of speeches ? ----
 
+# Get lenght of speeches
+appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[^, ]"))
+# filter out cases of less than 50 characters
 
+# extract sequence of parties
 party_seq <- appearances_tib$party
-party_seq <- party_seq[!is.na(party_seq)]
+party_seq[which(is.na(party_seq))] <- "other"
 get_seq <- function(vec) {
   grp_cnt <- NULL
   count = 0
@@ -161,115 +173,85 @@ ggplot(party_seq_tib) +
 party_seq_tib %<>% mutate(index = row_number())
 
 ggplot(party_seq_tib) +
-  geom_point(aes(index, run, colour = party))
+  geom_col(aes(index, run, fill = party), width = 1)
 
 ggplot(party_seq_tib) +
   geom_histogram(aes(run, fill = party))
 
-l1 <- as.list(party_seq_tib$party)
-l2 <- as.list(party_seq_tib$run)
-x <- map2(l1, l2, rep) %>% unlist()
-y <- map(l2, ~seq(1, .x)) %>% unlist()
-tibble(x, y) %>% mutate(r = row_number()) %>%
-  ggplot(aes(r, y)) +
-  geom_point(aes(colour = x)) 
+# l1 <- as.list(party_seq_tib$party)
+# l2 <- as.list(party_seq_tib$run)
+# x <- map2(l1, l2, rep) %>% unlist()
+# y <- map(l2, ~seq(1, .x)) %>% unlist()
+# tibble(x, y) %>% mutate(r = row_number()) %>%
+#   ggplot(aes(r, y)) +
+#   geom_col(aes(fill = x), width = 1) 
   
+# Run is buggy, conservatives sequence always 1 then 2 (why gaps also?)
+# I am stupid, this is exactly what I wanted- why the gaps though?
+
 # What about the pairs of speakers ? ----
 
-sequence_tib <- appearances_tib %>% select(-speeches)
-sequence_tib %<>% mutate(name_shift = lead(name), party_shift = lead(party))
+# make tibble of paired speaker names, then mutate new columsn where names
+# are sorted in alphabetical order in each pair. Then reduce + count. 
 
-# Count number of pairs of speakers
-sequence_tib %<>% group_by(name, name_shift) %>% summarise(weights = n()) %>% arrange(desc(weights)) %>% ungroup()
-
-scanseq <- sequence_tib[1,] %>% mutate(temp = name, name = name_shift, name_shift = temp)
-scanseqs <- list()
-
-for (i in 1:dim(sequence_tib)[1]) {
-  scanseqs[[i]] <- c(sequence_tib[i,2], sequence_tib[i,1])
-}
-
-
-
-shuffled <- sequence_tib %>% ungroup() %>% mutate(temp = name_shift, name_shift = name, name = temp) %>% select(-temp)
-shuffled
-
-sequence_tib %>% bind_rows(shuffled)
-
-sequence_tib %>% select(name, name_shift) %>% group_by(name, name_shift) %>% summarise(n = n()) %>% spread(name, n) %>% View()
-
-test <- list(c("a", "b"), c("b", "a"))
-test[[1]] %in% test[[2]]
-
-sequence_tib[1,]
-test <- distinct(sequence_tib, name, name_shift)
-test %>% semi_join(test, by = c("name_shift" = "name", "name" = "name_shift"))
-
-nrows <- dim(sequence_tib)[1]
-pairlist <- list()
-for (i in 1:nrows) {
-  pairlist[[i]] <- c(sequence_tib[i,1], sequence_tib[i,2])
-}
-
-duplicated(pairlist)
-
-sequence_tib <- appearances_tib %>% select(-speeches)
+sequence_tib <- appearances_tib_f %>% select(-speeches)
 sequence_tib %<>% mutate(name_shift = lead(name), party_shift = lead(party))
 sequence_tib %<>% mutate(px = pmin(name, name_shift), py = pmax(name, name_shift))
 
 paired_seq_tib <-  sequence_tib %>% 
   group_by(px, py) %>%
-  summarise(weights = n()) %>% arrange(desc(weights), px)  %>% filter(!is.na(px))
+  summarise(weights = n()) %>% filter(!is.na(px))
 
 total_weights <- paired_seq_tib %>% gather(temp, speaker, -weights) %>% select(-temp) %>% 
   group_by(speaker) %>% summarise(total_weight = sum(weights)) %>% arrange(desc(total_weight))
 
-num_appearances <- appearances_tib %>% select(name) %>% group_by(name) %>% count() %>% arrange(desc(n))
+num_appearances <- appearances_tib_f %>% select(name) %>% group_by(name) %>% count() %>% arrange(desc(n))
 
-# Normalise weights by how often a speaker spoke?
+# NETWORKS ----
 
-# paired seq tib is an edge list
-library(network)
-nodes <- appearances_tib %>% distinct(name) %>% select(name) 
-routes_network <- network(paired_seq_tib, vertex.attr = nodes, matrix.type = "edgelist", ignore.eval = FALSE)
-plot(routes_network, vertex.cex = 2, mode = "circle")
+#https://www.data-imaginist.com/2017/ggraph-introduction-edges/
+# GO HERE, TRY SMALL TEST CASE
+simple <- make_graph('bull')
+# Random names - I swear
+V(simple)$name <- c('Thomas', 'Bob', 'Hadley', 'Winston', 'Baptiste')
+E(simple)$type <- sample(c('friend', 'foe'), 5, TRUE)
 
-# try again but filter out speakers who made only one interaction
-multi_pst <- paired_seq_tib %>% filter(weights > 1)
-nodes_pst <- tibble(name = unique(c(multi_pst$px, multi_pst$py)))
-routes_network <- network(multi_pst, vertex.attr = nodes, matrix.type = "edgelist", ignore.eval = FALSE)
-plot(routes_network, vertex.cex = 2, mode = "circle")
-
-# Same in igraph
-
-detach(package:network)
-rm(routes_network)
-library(igraph)
-
-routes_igraph <- graph_from_data_frame(d = multi_pst, vertices = nodes, directed = TRUE)
-routes_igraph
-plot(routes_igraph, edge.arrow.size = 0.2)
-plot(routes_igraph, layout = layout_with_graphopt, edge.arrow.size = 0.2, size = 30)
+ggraph(simple, layout = 'graphopt') + 
+  geom_edge_link(arrow = arrow(length = unit(4, 'mm'))) + 
+  geom_node_point(size = 5)
 
 library(tidygraph)
 library(ggraph)
+library(igraph)
 
-routes_tidy <- tbl_graph(nodes = nodes, edges = paired_seq_tib, directed = TRUE)
-routes_igraph_tidy <- as_tbl_graph(routes_igraph)
+# instead of names, try numbers
+appearance_id <- appearances_tib_f %>% distinct(name) %>% mutate(r = row_number())
+edge_list1 <- paired_seq_tib %>% rename(from = px, to = py)#%>% left_join(appearance_id, by = c("px" = "name")) %>% left_join(appearance_id, by = c("py" = "name")) %>% rename(from = r.x, to = r.y) %>% select(-px, -py)
+edge_list2 <- edge_list1 %>% mutate(from2 = from) %>% mutate(from = to, to = from2) %>% select(-from2)
+edge_list <- bind_rows(edge_list1, edge_list2) 
+
+nodes <-  appearance_id %>% select(name)
+routes_tidy <- tbl_graph(nodes = nodes, edges = edge_list, directed = FALSE)
+routes_igraph_tidy <- as_tbl_graph(routes_tidy)
 
 routes_igraph_tidy
 routes_tidy
 ggraph(routes_tidy) + geom_edge_link() + geom_node_point() + theme_graph()
 
-ggraph(routes_tidy, layout = "graphopt") + 
+# speakers who spoke once
+few_int_lords <- total_weights %>% filter(total_weight == 2) %>% pull(speaker)
+
+routes_tidy %>% mutate(name = ifelse(name %!in% few_int_lords, name, " ")) %>%
+ggraph(layout = "graphopt") + 
   geom_node_point() +
   geom_edge_link(aes(width = weights), alpha = 0.8) + 
   scale_edge_width(range = c(0.2, 2)) +
   labs(edge_width = "Interactions") +
-  theme_graph()
+  theme_graph() +
+  geom_node_text(aes(label = name), colour = 'red', vjust = 0.8)
 
-routes_tidy <- tbl_graph(nodes = nodes, edges = paired_seq_tib, directed = TRUE)
-routes_igraph_tidy <- as_tbl_graph(routes_igraph)
+routes_tidy <- tbl_graph(nodes = nodes, edges = paired_seq_tib, directed = FALSE)
+routes_igraph_tidy <- as_tbl_graph(routes_tidy)
 ggraph(routes_tidy) + geom_edge_link() + geom_node_point() + theme_graph()
 
 
