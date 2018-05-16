@@ -2,6 +2,7 @@
 pacman::p_load(tidyverse, stringr, forcats, purrr, magrittr, tidytext, reshape2, wordcloud)
 full_speeches <- readRDS("data//full_speeches.RDAT")
 appearances_tib <- readRDS("data//appearances.RDAT")
+`%!in%` <- negate(`%in%`)
 
 tidy_dtm <- appearances_tib %>% 
   mutate(r = row_number()) %>% 
@@ -74,6 +75,23 @@ main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
 seq_plot <- words_per_speech %>% left_join(distinct(appearances_tib, name, party)) %>% mutate(party = ifelse(party %!in% main_parties, "other", party)) %>% ggplot(aes(r, word_count)) + geom_col(aes(fill = party), width = 1) + scale_fill_brewer(palette = "Set1")
 seq_plot #+ coord_cartesian(xlim = c(200,250))
 appearances_tib %>% mutate(id = row_number(), party = ifelse(party %!in% main_parties, "other", party)) %>% ggplot(aes(id, 1)) + geom_col(aes(fill = party)) + scale_fill_brewer(palette = "Spectral")
+
+hist(words_per_speech$word_count, breaks = 50)
+spchs <- words_per_speech %>% filter(word_count > 200, word_count < 250) 
+appearances_tib %>% mutate(r = row_number()) %>% semi_join(spchs) %>% View()
+full_speeches %<>% mutate(party = ifelse(party %in% main_parties, party, 'other'))
+words_per_speech %>% 
+  left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>%
+  filter(party != next_party) %>% mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
+  summarise(s = sum(s)) %>% arrange(desc(s))
+
+# take top 10% of talks, who follows who?
+words_per_speech %>% 
+  left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>% top_n(25, next_count) %>%
+  group_by(party, next_party) %>%
+  count() %>% arrange(desc(n))
 
 # running mean of speech lengths
 wcs <- words_per_speech$word_count
@@ -206,6 +224,21 @@ total_weights <- paired_seq_tib %>% gather(temp, speaker, -weights) %>% select(-
   group_by(speaker) %>% summarise(total_weight = sum(weights)) %>% arrange(desc(total_weight))
 
 num_appearances <- appearances_tib_f %>% select(name) %>% group_by(name) %>% count() %>% arrange(desc(n))
+
+# Prior to network plotting and clustering, get raw numbers
+
+paired_seq_tib %>% arrange(desc(weights))
+pjoin <-surname_join %>% left_join(select(full_speeches, name, party)) %>% select(surname, party)
+main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
+pjoin %<>% mutate(party = ifelse(party %in% main_parties, party, 'Other'))
+paired_party_tib <- paired_seq_tib %>% ungroup() %>% left_join(pjoin, by = c('px' = 'surname')) %>% left_join(pjoin, by = c('py' = 'surname')) %>%
+  mutate(px = pmin(party.x, party.y), py = pmax(party.x, party.y)) 
+
+# px and py are sorted orders, party.x and party.y are unsorted (order as appears)
+paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(weights)) %>% arrange(desc(total_interactions)) %>% View()
+
+paired_party_tib %>% group_by(party.x, party.y) %>% summarise(total_interactions_ordered = sum(weights)) %>% arrange(desc(total_interactions_ordered)) %>% View()
+
 
 # NETWORKS ----
 
