@@ -6,10 +6,7 @@ appearances_tib <- readRDS("data//appearances.RDAT")
 
 tidy_dtm <- appearances_tib %>% 
   mutate(r = row_number()) %>% 
-  unnest_tokens(word, speeches) %>% 
-  group_by(name, r, word) %>% 
-  summarise(count = length(word)) %>%
-  arrange(r)
+  unnest_tokens(word, speeches) 
 
 eu <- read_file("data/European Union (Notification of Withdrawal) Bill 2017-03-01 (1).txt")
 source('scripts\\main_src.R')
@@ -563,3 +560,60 @@ eu_docs %<>% flatten() %>% flatten()
 
 tibble(doc = unlist(eu_docs)) %>% mutate(r = row_number()) %>% group_by(r) %>% unnest_tokens(word, doc) %>% 
   anti_join(stop_words) %>% group_by(word) %>% summarise(count = n()) %>% arrange(desc(count)) %>% View()
+
+
+
+# Attempt at topic modelling ----
+
+tidy_dtm %>% 
+  anti_join(stop_words) %>%
+  filter(!str_detect(word, "[0-9]")) %>%
+  group_by(word, r) %>% 
+  mutate(speech_count = n()) %>%
+  group_by(word) %>%
+  mutate(total_count = n()) %>%
+  group_by(r) %>%
+  mutate(words_in_speech = n()) %>%
+  ungroup() %>%
+  mutate(words_in_hansard = n()) %>% arrange(desc(speech_count),r) %>% distinct() %>% View()
+
+topic_frame <- tidy_dtm %>% 
+  anti_join(stop_words) %>%
+  filter(!str_detect(word, "[0-9]")) %>%
+  group_by(word, r) %>% 
+  mutate(speech_count = n()) %>%
+  group_by(word) %>%
+  mutate(total_count = n()) %>%
+  group_by(r) %>%
+  mutate(words_in_speech = n()) %>%
+  ungroup() %>%
+  mutate(words_in_hansard = n()) %>% arrange(desc(speech_count),r) %>% distinct() %>% 
+  mutate(speech_prop = speech_count/words_in_speech) %>%
+  mutate(total_prop = total_count/words_in_hansard) %>%
+  filter(total_prop<speech_prop) %>% arrange(r) 
+
+topic_words <- topic_frame %>% filter(speech_count > 2) %>% split(.$r) %>% map("word")
+txt <- topic_words[[1]]
+# Idea here is to only pull the nouns from the text
+# "Part of speech tagging"
+
+library(NLP)
+library(openNLP)
+library(openNLPmodels.en)
+
+# Some text.
+s <-paste(c("John likes the girl.\n","The girl also likes John."),collapse = "")
+s <-as.String(s)
+## Need sentence and word token annotations.
+sent_token_annotator <-Maxent_Sent_Token_Annotator()
+word_token_annotator <-Maxent_Word_Token_Annotator()
+a2 <-annotate(s, list(sent_token_annotator, word_token_annotator))
+pos_tag_annotator <-Maxent_POS_Tag_Annotator()
+pos_tag_annotator
+#>An annotator inheriting from classes
+#>  Simple_POS_Tag_Annotator Annotator
+#>with description
+#>  Computes POS tag annotations using the Apache OpenNLP Maxent Part of
+#>  Speech tagger employing the default model for language 'en'
+a3 <-annotate(s, pos_tag_annotator, a2)
+a3
