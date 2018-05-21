@@ -617,3 +617,217 @@ pos_tag_annotator
 #>  Speech tagger employing the default model for language 'en'
 a3 <-annotate(s, pos_tag_annotator, a2)
 a3
+s
+
+## Some text.
+s <- paste(c("Pierre Vinken, 61 years old, will join the board as a ",
+             "nonexecutive director Nov. 29.\n",
+             "Mr. Vinken is chairman of Elsevier N.V., ",
+             "the Dutch publishing group."),
+           collapse = "")
+s <- as.String(s)
+## Need sentence and word token annotations.
+sent_token_annotator <- Maxent_Sent_Token_Annotator()
+word_token_annotator <- Maxent_Word_Token_Annotator()
+a2 <- annotate(s, list(sent_token_annotator, word_token_annotator))
+
+pos_tag_annotator <- Maxent_POS_Tag_Annotator()
+pos_tag_annotator
+a3 <- annotate(s, pos_tag_annotator, a2)
+a3
+## Variant with POS tag probabilities as (additional) features.
+head(annotate(s, Maxent_POS_Tag_Annotator(probs = TRUE), a2))
+
+## Determine the distribution of POS tags for word tokens.
+a3w <- subset(a3, type == "word")
+tags <- sapply(a3w$features, `[[`, "POS")
+tags
+table(tags)
+## Extract token/POS pairs (all of them): easy.
+sprintf("%s/%s", s[a3w], tags)
+## Extract pairs of word tokens and POS tags for second sentence:
+a3ws2 <- annotations_in_spans(subset(a3, type == "word"),
+                              subset(a3, type == "sentence")[2L])[[1L]]
+sprintf("%s/%s", s[a3ws2], sapply(a3ws2$features, `[[`, "POS"))
+
+
+# Try and apply this stuff to my stuff
+
+library(NLP)
+library(openNLP)
+library(openNLPmodels.en)
+
+appearances_tib %>% rowwise() %>%  summarise(s = str_length(speeches))
+otxt <- appearances_tib$speeches[[6]]
+txt <- appearances_tib$speeches[[6]]
+txt <- as.String(txt)
+sent_token_annotator <- Maxent_Sent_Token_Annotator()
+word_token_annotator <- Maxent_Word_Token_Annotator()
+a2 <- annotate(txt, list(sent_token_annotator, word_token_annotator))
+
+pos_tag_annotator <- Maxent_POS_Tag_Annotator()
+pos_tag_annotator
+a3 <- annotate(txt, pos_tag_annotator, a2)
+a3
+## Variant with POS tag probabilities as (additional) features.
+head(annotate(txt, Maxent_POS_Tag_Annotator(probs = TRUE), a2))
+
+## Determine the distribution of POS tags for word tokens.
+a3w <- subset(a3, type == "word")
+tags <- sapply(a3w$features, `[[`, "POS")
+tags
+table(tags)
+sprintf("%s/%s", txt[a3w], tags)
+
+# Voi fucking LA
+
+pos_tag_abbrs <- readRDS("data/pos_tag_abbrs.RDAT")
+
+pos_tag_abbrs %>% head(25)
+tags_f <- tags[str_detect(txt[a3w], "[A-Za-z]")]
+txt[a3w]
+tibble(tags) 
+which(str_detect(tags, "NN"))
+txt_tib <- tibble(otxt) 
+txt_tib %>% unnest_tokens(word, otxt) %>% mutate(id = row_number()) %>% add_column(tags_f) %>%
+  filter(str_detect(tags_f, "NN"))
+annotate(txt, Maxent_POS_Tag_Annotator(probs = TRUE), a2)
+txt[a3w]
+
+
+
+# Function to annotate a specific text
+
+sent_token_annotator <- Maxent_Sent_Token_Annotator()
+word_token_annotator <- Maxent_Word_Token_Annotator()
+pos_tag_annotator <- Maxent_POS_Tag_Annotator()
+
+anno <- function(otxt, pat = "NN") {
+  txt <- as.String(otxt)
+  a2 <- annotate(txt, list(sent_token_annotator, word_token_annotator))
+  a3 <- annotate(txt, pos_tag_annotator, a2)
+  #a3probs <- annotate(txt, Maxent_POS_Tag_Annotator(probs = TRUE), a2)
+  #a3pw <- subset(a3probs, type == "word")
+  #probs <- sapply(a3pw$features, `[[`, "POS_prob")
+  a3w <- subset(a3, type == "word")
+  tags <- sapply(a3w$features, `[[`, "POS")
+  tags_f <- tags[str_detect(txt[a3w], "[A-Za-z]")]
+  txt_tib <- tibble(word = txt[a3w], tags)
+  txt_tib %>%
+    filter(str_detect(tags, pat)) %>% left_join(pos_tag_abbrs, by = c("tags" = "abbreviation"))
+} 
+
+o <- anno(otxt, pat = "[A-Za-z]")
+
+otxt <- appearances_tib$speeches[[1]]
+otxt = "expatriate"
+
+# also use bigrams (e.g. adj + noun) to model topics
+tidy_bigrams <- appearances_tib %>% 
+  mutate(r = row_number()) %>% 
+  unnest_tokens(bigram, speeches, token = "ngrams", n = 2) 
+
+swords <- stop_words %>% filter(!str_detect(word, "^.$"))
+s_words <- str_c(swords$word, collapse = "|")
+
+tidy_bigrams %>% filter(r == 1) %>% group_by(bigram) %>% mutate(sw = str_detect(bigram, str_c("(", s_words, ")", " ", "(", s_words, ")(?!.)"))) %>% 
+  filter(!sw) %>% group_by(bigram) %>% summarise(n = n()) %>% arrange(desc(n)) %>% View()
+
+# POS annotated tibbles 
+annos_nested <- appearances_tib %>% 
+  mutate(r = row_number()) %>%
+  group_by(r) %>%
+  nest() %>%
+  mutate(s = map(data, "speeches")) %>%
+  mutate(annotations = map(s, anno, ".*"))
+
+annos_nested$annotations[[1]]  %>% distinct(word, tags)
+annos_nested$annotations[[1]] %>% filter(!str_detect(word, "\\W")) %>%
+  mutate(nword = lead(word), ntag = lead(tags), ndesc = lead(description)) %>%
+  unite(bigram, word, nword, sep = " ") %>%
+  unite(bitag, tags, ntag, sep = " ") %>% 
+  filter(str_detect(bitag, "JJ[S|R]? NN[S|P|PS]?")|str_detect(bitag, "NN[S|P|PS]? NN[S|P|PS]?")) %>% View()
+
+
+
+tidy_dtm_tf <- tidy_dtm %>% group_by(r) %>% count(word)
+tfidf <- tidy_dtm_tf %>% bind_tf_idf(word, r, n)
+tfidf %>% arrange(desc(tf_idf)) %>%  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  filter(r %in% 1:6) %>%
+  group_by(r) %>% top_n(6, tf_idf) %>% ungroup() %>%
+  mutate(word = reorder(word, tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = r)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~r, ncol = 2, scales = "free") +
+  coord_flip()
+
+tfidf %>% arrange(desc(tf_idf)) %>%  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  filter(r %in% 1:6) %>% group_by(r) %>% summarise(s = sum(n))
+
+
+party_tib <- appearances_tib %>% mutate(r = row_number()) %>% distinct(r, party)
+corplot <- tidy_dtm_tf %>% mutate(tot = sum(n)) %>% filter(tot > 500) %>%
+  anti_join(stop_words) %>% mutate(p = n/tot) %>% subset(n >= 3) %>%
+  select(-n, -tot) %>% left_join(party_tib) %>% unite(r, party, r, sep = "_") %>%
+  spread(r, p) 
+
+corplot[is.na(corplot)] <- 0 
+
+mycol <- colorRampPalette(c("darkgrey", "grey", "white", "cadetblue1", "cadetblue"))  
+corr <- cor(corplot[,-1], use = "pairwise.complete.obs") %>%  
+  corrplot::corrplot(method="color", order="hclust", diag=FALSE, 
+           tl.col = "black", tl.srt = 45, tl.cex=0.6,
+           col=mycol(100), 
+           type="lower",
+           title="Correlation Between speech styles", 
+           family="Avenir",
+           mar=c(0,0,1,0))
+
+corr
+
+library(tidygraph)
+library(ggraph)
+
+tfidf
+word_dist <- dist(corplot)
+attr(word_dist, which = "Labels") <- names(corplot)[-1] 
+clustdat <- hclust(word_dist)
+clustdat$labels
+word_tree <- as_tbl_graph(clustdat)
+word_tree
+
+corplot
+clustdat
+clustgroups <- cutree(clustdat, k = 4)
+clustgroups
+
+word_tree %<>% activate(nodes) %>% mutate(party = str_extract(label, ".\\w*."))
+word_tree1 <- word_tree %>%
+  mutate(party = map_bfs_back_chr(node_is_root(), .f = function(node, path, ...) {
+    nodes <- .N()
+    if (nodes$leaf[node]) return(nodes$party[node])
+    if (anyNA(unlist(path$result))) return(NA_character_)
+    path$result[[1]]
+  }))
+
+word_tree
+word_tree1 %>% activate(nodes) %>% ggraph(layout = 'dendrogram') + 
+  geom_edge_diagonal2(aes(colour = node.party)) +
+  geom_node_point(aes(filter = leaf, colour = party)) + 
+  theme_graph()
+
+
+
+corplot_t <- t(corplot[,-1])
+
+# calculate distance
+word_dist <- dist(corplot_t, method="euclidean")
+
+# fit clusters
+fit <- hclust(word_dist, method="average")
+
+# plot 
+plot(fit,main="Cluster Dendrogram of Beer Styles",  
+     family="Avenir")
+rect.hclust(fit, k=3, border="cadetblue")  
