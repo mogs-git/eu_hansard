@@ -831,3 +831,98 @@ fit <- hclust(word_dist, method="average")
 plot(fit,main="Cluster Dendrogram of Beer Styles",  
      family="Avenir")
 rect.hclust(fit, k=3, border="cadetblue")  
+
+
+# general functions:
+# wordsInContext
+txt <- appearances_tib$speeches[[5]]
+txt %<>% str_to_lower()
+# regex approach
+word <- "there"
+txt %>% str_extract_all(str_c("(^\\W*|\\w+\\W+)", word, "s?(\\W+\\w+|\\W*$)"))
+
+wordInContext_rgx <- function(txt, word) {
+  # lower case full string vector (txt) and search term (word).
+  txt %>% str_extract_all(str_c("(^\\W*|\\w+\\W+)", word, "s?(\\W+\\w+|\\W*$)"))
+}
+
+# tidytext approach
+
+txt_tib <- txt %>% as.tibble() %>% unnest_tokens(word, value) 
+word_pos <- which(str_detect(txt_tib$word, word))
+context_vec <- NULL
+getContextFromPos <- function(txt_list, pos) {
+  N = length(txt_list)
+  if (N <= 3|!is.numeric(pos)) {
+    return(NA)
+  }
+  if (pos == 1) {
+    return(str_c("START", txt_list[[1]], txt_list[[2]], sep = "--"))
+  } else if (pos == N) {
+    return(str_c(txt_list[[N-1]], txt_list[[N]], "END", sep = "--"))
+  } else {
+    return(str_c(txt_list[[pos-1]], txt_list[[pos]], txt_list[[pos+1]], sep = "--"))
+  }
+}
+wic <- list()
+for (i in seq_along(word_pos)) {
+  wic[[i]] <- getContextFromPos(as.list(txt_tib$word), word_pos[[i]])
+}
+wic
+
+wordInContext_tt <- function(txt, word) {
+  txt_tib <- txt %>% as.tibble() %>% unnest_tokens(word, value) 
+  word_pos <- which(str_detect(txt_tib$word, word))
+  getContextFromPos <- function(txt_list, pos) {
+    N = length(txt_list)
+    if (N <= 3|!is.numeric(pos)) {
+      return(NA)
+    }
+    if (pos == 1) {
+      return(str_c("START", txt_list[[1]], txt_list[[2]], sep = "--"))
+    } else if (pos == N) {
+      return(str_c(txt_list[[N-1]], txt_list[[N]], "END", sep = "--"))
+    } else {
+      return(str_c(txt_list[[pos-1]], txt_list[[pos]], txt_list[[pos+1]], sep = "--"))
+    }
+  }
+  wic <- list()
+  for (i in seq_along(word_pos)) {
+    wic[[i]] <- getContextFromPos(as.list(txt_tib$word), word_pos[[i]])
+  }
+  wic
+}
+
+txt
+word
+system.time(wordInContext_tt(txt, word))
+system.time(wordInContext_rgx(txt, word))
+
+
+
+# Word cloud comparison of speaker pair
+
+# This woud be interesting for specific types of words like verbs or adjectives.
+
+head_vs_hayt <- full_speeches %>% mutate(chars_used = str_length(all_speeches)) %>% arrange(desc(chars_used)) %>% top_n(2)
+full_speeches %>% mutate(words_used = sum(str_detect(all_speeches, "[^ ]+"), na.rm = TRUE)) %>% select(words_used)
+
+head_vs_hayt %>% 
+  unnest_tokens(word, all_speeches) %>%
+  anti_join(stop_words) %>% 
+  group_by(name) %>%
+  count(word) %>% arrange(desc(n)) %>% top_n(9) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~name)
+
+hh_tidy <- head_vs_hayt %>% 
+  unnest_tokens(word, all_speeches) %>%
+  anti_join(stop_words) %>% 
+  group_by(name) %>%
+  count(word)
+
+hh_tidy %>% acast(word ~ name, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100)
