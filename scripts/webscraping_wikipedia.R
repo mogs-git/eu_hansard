@@ -48,9 +48,65 @@ link_clashfern %>%
   read_html() %>%
   html_nodes("th .nowrap")
 
-link_clashfern %>%
+infobox <- link_clashfern %>%
   read_html() %>%
   html_nodes(".vcard") %>%
   html_text("infobox vcard")
 
-# function: process vcard.
+# function: process vcard/infobox
+
+infobox <- infobox[1]
+infobox %>% str_view_all("\\n")
+
+# start wiht just the personal details
+
+infobox <- str_replace_all(infobox, "\\n", "_")
+str_view_all(infobox, "Personal details.*$")
+personal_box <- str_extract(infobox, "(?<=Personal details_).*$")
+personal_box %<>% str_split("_") %>% unlist()
+
+pbox_to_tibble <- function(pbox) {
+  tibble(category = c(pbox[1], pbox[3], pbox[5]), value = c(pbox[2], pbox[4], pbox[6]))
+}
+pbox_to_tibble(personal_box)
+
+getInfoboxFromLink <- function(link) {
+  link %>%
+    read_html() %>%
+    html_nodes(".vcard") %>%
+    html_text("infobox vcard")
+}
+
+# first ten are parties, can use nlp to detect names later blah
+lord_links %>% head(20)
+lord_links <- lord_links[11:length(lord_links)]
+
+infoboxes <- lord_links[50:100] %>% map(getInfoboxFromLink)
+infoboxes_clean <- map(infoboxes, clean_infobox)
+clean_infobox <- function(infobox) {
+  infobox <- infobox[1]
+
+  # start wiht just the personal details
+  
+  infobox <- str_replace_all(infobox, "\\n", "_")
+  personal_box <- str_extract(infobox, "(?<=Personal details_).*$")
+  personal_box %<>% str_split("_") %>% unlist()
+}
+
+pbox_to_tibble <- function(pbox) {
+  dob = which(pbox == "Born")
+  party = which(pbox == "Political party")
+  almamater = which(pbox == "Alma mater")
+  tibble(category = c(pbox[dob], pbox[party], pbox[almamater]), value = c(pbox[dob+1], pbox[party+1], pbox[almamater+1]))
+}
+infoboxes_clean %>% pbox_to_tibble()
+
+# shitty way of getting name
+names_pulled <- lord_links[50:100] %>% map(str_extract, "/[A-Z].*$")
+info_tibbles <- map(infoboxes_clean, pbox_to_tibble)
+
+# add names to tibbles
+info_tibbles <- map2(info_tibbles, names_pulled, ~add_column(.x, name = .y) %>% select(name, everything()))
+info_tibbles %<>% reduce(bind_rows)
+
+info_tibbles %>% filter(category == "Alma mater") %>% View()
