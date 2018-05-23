@@ -43,6 +43,12 @@ speech_tib <- reduce_speeches(appearances_tib)
 
 # Reduce party data
 
+keep_main_parties <- function(df) {
+  main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
+  df %<>% mutate(party_f = ifelse(party %!in% main_parties, "other", party)) 
+  df$party_f <- fct_relevel(df$party_f, c("(Con)", "(CB)", "(LD)", "(Lab)", "other"))
+  df
+}
 main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
 appearances_tib %<>% mutate(r = row_number(), party_f = ifelse(party %!in% main_parties, "other", party)) 
 appearances_tib$party_f <- fct_relevel(appearances_tib$party_f, c("(Con)", "(CB)", "(LD)", "(Lab)", "other"))
