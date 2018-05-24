@@ -1,3 +1,10 @@
+# load----
+pacman::p_load(tidyverse, magrittr, tidytext, stringr)
+
+full_speeches <- readRDS("data//full_speeches.RDAT")
+appearances_tib <- readRDS("data//appearances.RDAT")
+`%!in%` <- negate(`%in%`)
+
 # Get lenght of speeches
 appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[^, ]"))
 # filter out cases of less than 50 characters
@@ -47,15 +54,42 @@ ggplot(party_seq_tib) +
 
 
 full_speeches %<>% mutate(party_f = ifelse(party %in% main_parties, party, 'other'))
+
+(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+    group_by(r, name) %>% summarise(word_count = n()))
+
 words_per_speech %>% 
-  left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
-  mutate(next_party = lead(party), next_count = lead(word_count)) %>%
-  filter(party != next_party) %>% mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
-  summarise(s = sum(s)) %>% arrange(desc(s))
+  left_join(select(full_speeches, name, party)) %>% keep_main_parties() %>% ungroup() %>% select(-party) %>%
+  mutate(party = party_f, next_party = lead(party), next_count = lead(word_count)) %>% 
+  mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
+  summarise(s = sum(s)) %>% arrange(desc(s)) %>%
+  unite(pair, party, next_party) %>%
+  ggplot(aes(fct_reorder(pair, s), s)) + geom_col() + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+words_per_speech %>% 
+  left_join(select(full_speeches, name, party)) %>% keep_main_parties() %>% ungroup() %>% select(-party) %>%
+  mutate(party = party_f, next_party = lead(party), next_count = lead(word_count)) %>% 
+  mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
+  summarise(s = sum(s)) %>% arrange(desc(s)) %>% # spread(party, s)
+  ggplot() + geom_tile(aes(party, next_party, fill = s))
 
 # take top 10% of talks, who follows who?
+words_per_speech$word_count %>% quantile()
+
 words_per_speech %>% 
   left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
   mutate(next_party = lead(party), next_count = lead(word_count)) %>% top_n(25, next_count) %>%
   group_by(party, next_party) %>%
   count() %>% arrange(desc(n))
+
+# pairs where response made was over 75th quantile in terms of length.
+words_per_speech %>% 
+  left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>% filter(next_count > 420) %>%
+  group_by(party, next_party) %>%
+  count() %>% arrange(desc(n))
+
+words_per_speech %>% 
+  left_join(select(full_speeches, name, party)) %>% ungroup() %>% 
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>%
+  ggplot(aes(word_count, next_count)) + geom_point()

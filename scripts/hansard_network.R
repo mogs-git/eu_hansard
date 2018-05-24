@@ -144,3 +144,25 @@ tidygraph %>%
   geom_node_point(aes(filter = labour, size = centrality)) +
   geom_node_label(aes(filter = labour, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 0.2, label.padding = unit(0.1, 'lines')) +
   theme_graph() 
+
+# Do lords who say the most make the most connections?
+
+# Count number of words in each speech (SUMMARY)
+(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+    group_by(r, name) %>% summarise(word_count = n()))
+
+# Count total number of words said by each lord
+(words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name)))
+
+words_per_lord %<>% left_join(surname_join) %>% select(-name) %>% rename(name = surname)
+
+tidygraph %>%
+  mutate(top_edge = ifelse(value.x %in% topnames | value.y %in% topnames, 1, 0.2)) %>%
+  activate(nodes) %>%
+  left_join(words_per_lord) %>%
+  ggraph(layout = 'lgl') + 
+  geom_edge_link(aes(alpha = top_edge, width = weights)) + 
+  scale_edge_width(range = c(0.5,1.5)) +
+  geom_node_point(aes(size = word_count, colour = party)) +
+  geom_node_label(aes(filter = top, label = name, alpha = 0), nudge_x = 0.25, nudge_y = -0.3, label.padding = unit(0.1, 'lines')) +
+  theme_graph()
