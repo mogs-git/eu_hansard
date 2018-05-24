@@ -6,17 +6,6 @@ pacman::p_load(tidyverse, magrittr)
 https://en.wikipedia.org/wiki/James_Mackay,_Baron_Mackay_of_Clashfern
 
 
-url <- "https://en.wikipedia.org/wiki/Timeline_of_wars"
-periods <- url %>%
-  read_html() %>%
-  html_nodes("ul") %>%
-  html_text(trim = TRUE) %>%
-  strsplit(split = "\n") %>%
-  unlist()
-periods <- periods[18:26]
-periods[1] <- tolower(gsub(" ", "_", periods[1]))
-periods
-
 url <- "https://en.wikipedia.org/wiki/Members_of_the_House_of_Lords"
 
 links <- url %>%
@@ -32,6 +21,8 @@ url_prefix = "https://en.wikipedia.org"
 lord_links %<>% html_attr("href")
 lord_links <- map(lord_links, ~str_c(url_prefix, .))
 lord_links <- keep(lord_links, ~!str_detect(., "cite_note"))
+
+### test ###
 
 link_clashfern <- lord_links %>% keep(~str_detect(., "Clashfern"))
 link_clashfern <- link_clashfern[[1]]
@@ -81,17 +72,26 @@ getInfoboxFromLink <- function(link) {
 lord_links %>% head(20)
 lord_links <- lord_links[11:length(lord_links)]
 
-infoboxes <- lord_links[50:100] %>% map(getInfoboxFromLink)
-infoboxes_clean <- map(infoboxes, clean_infobox)
+
+getInfoboxFromLink <- function(link) {
+  link %>%
+    read_html() %>%
+    html_nodes(".vcard") %>%
+    html_text("infobox vcard")
+}
+
 clean_infobox <- function(infobox) {
   infobox <- infobox[1]
-
+  
   # start wiht just the personal details
   
   infobox <- str_replace_all(infobox, "\\n", "_")
   personal_box <- str_extract(infobox, "(?<=Personal details_).*$")
   personal_box %<>% str_split("_") %>% unlist()
 }
+
+infoboxes <- lord_links[50:100] %>% map(getInfoboxFromLink)
+infoboxes_clean <- map(infoboxes, clean_infobox)
 
 pbox_to_tibble <- function(pbox) {
   dob = which(pbox == "Born")
@@ -109,4 +109,19 @@ info_tibbles <- map(infoboxes_clean, pbox_to_tibble)
 info_tibbles <- map2(info_tibbles, names_pulled, ~add_column(.x, name = .y) %>% select(name, everything()))
 info_tibbles %<>% reduce(bind_rows)
 
+info_tibbles %>% View()
 info_tibbles %>% filter(category == "Alma mater") %>% View()
+
+# processing strings
+
+born_str <- info_tibbles %>% filter(category == "Born") %>% pull(value) %>% `[[`(1)
+
+# extract birth name (all chars up until first bracket)
+born_str %>% str_extract("^[^(]*")
+
+# date and age, not exactly specific but it works
+datage <- born_str %>% str_extract_all("\\([^()]*\\)")
+date <- datage[[1]][1]
+age <- datage[[1]][2]
+date
+age
