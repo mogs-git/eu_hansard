@@ -9,31 +9,30 @@ tidy_dtm <- appearances_tib %>%
   mutate(r = row_number()) %>% 
   unnest_tokens(word, speeches)
 
-# Number of questions
+# Number of questions ----
 
 full_speeches %>% group_by(name) %>% mutate(numQs = str_count(all_speeches, "\\?")) %>% View()
 
 s <- full_speeches %>% filter(name == "Lord Oates") %>% pull(all_speeches)
-qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\?)"
-str_extract_all(s, "\\w+\\?")
-str_extract_all(s, "\\?")
-initial_matches <- str_extract_all(s, qwords)[[1]]
-initial_match_indexes_start <- which(initial_matches == "?") - 1
-initial_match_indexes_end <- which(initial_matches == "?")
-qword_positions <- str_locate_all(s, qwords)[[1]]
-str_sub(s, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
 
 # Pull questions
 pull_questions <- function(string) {
   # pull the questions asked in a string, and the question word used.
   qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Wis|\\Whas|\\Wwill|\\Wdoes|\\?)"
+  
+  # Get the position of every question word and question mark
   initial_matches <- str_extract_all(string, qwords)[[1]]
+  
+  # Get the index of each question mark and the question word preceding it.
   initial_match_indexes_start <- which(initial_matches == "?") - 1
   initial_match_indexes_end <- which(initial_matches == "?")
+  
+  # Pull out the words between the question words and the question marks.
   qword_positions <- str_locate_all(string, qwords)[[1]]
   question_sentence <- str_sub(string, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
   question_word <- initial_matches[initial_match_indexes_start]
   
+  # Pull out the words between the end of the last sentence prior to each question mark.
   sentence_matches <- str_extract_all(string, "\\.|\\:|\\?")[[1]]
   sentence_matches_start <- which(sentence_matches == "?") - 1
   sentence_matches_end <- which(sentence_matches == "?")
@@ -43,14 +42,12 @@ pull_questions <- function(string) {
   return(tibble(question_word, question_sentence, question_sentence_full))
 }
 
-pull_questions(s) %>% View()
-
+# extract the questions asked by each speaker.
 all_questions <- full_speeches %>%
   group_by(name) %>% 
   do(pull_questions(str_to_lower(.$all_speeches)))
 
-# Number of unique words used
-
+# Number of unique words used ----
 total_words <- unique(tidy_dtm$word)
 tidy_dtm %>% 
   group_by(word) %>% mutate(total_count = n()) %>%
@@ -58,7 +55,7 @@ tidy_dtm %>%
   group_by(name) %>% summarise(total_words = sum(speaker_count), num_unique = sum(total_count == speaker_count), prop_unique = num_unique/total_words) %>%
   arrange(desc(prop_unique))
 
-# Number of times other lords are mentioned
+# Number of times other lords are mentioned ----
 
 surname <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+)") 
 surname <- surname[,2] %>% str_to_lower()
@@ -73,23 +70,34 @@ named_references_reg <- str_c("(", str_c(named_references, collapse = "|"), ")")
 
 # Problems: Some names match other words e.g. 'true', 'hunt'. double barrelled names. 
 # instances where someone refers to 'the noble lord, lord blencathra' will be counted twice
-# could solve this using negative lookahead on 'the noble'
-appearances_tib %<>% mutate(speeches = str_to_lower(speeches)) %>% filter(!is.na(speeches))
+# could solve this using negative lookahead on 'the noble'. Some Lords mentioned don't give
+# a speech,other people mentioned aren't present. 
+# Should I also do this for named entities in general? or just references?
 
-appearances_tib %>% group_by(name) %>% mutate(n_references = str_count(speeches, named_references_reg)) %>% View()
+appearances_tib_lower <- appearances_tib %>%
+  mutate(speeches = str_to_lower(speeches)) %>% 
+  filter(!is.na(speeches))
 
-s <- appearances_tib %>% filter(name == 'Lord Winston') %>% pull(speeches) 
-s <- appearances_tib$speeches[[1]] 
-s <- "The noble Lord, Lord Howard, and his noble steed carrying him, are followed by Lord Chubbington and his noble donkey, Assworth. There was supposedly a third lord, but the noble Lord being too drunk, did not arrive for the adventure."
+appearances_tib_lower %>% 
+  group_by(name) %>% 
+  mutate(n_references = str_count(speeches, named_references_reg)) %>%
+  select(n_references, everything())
+
+# two examples of pulling out specific references
+s <- appearances_tib_lower %>% filter(name == 'Lord Winston') %>% pull(speeches) 
+s <- appearances_tib_lower$speeches[[1]] 
 str_view_all(s, named_references_reg)
 str_extract_all(s, named_references_reg)
 
 # could also use entity extractor to get references to people, but
 # requires capitalised names and locations. 
-library(NLP)
-library(openNLP)
-library(openNLPmodels.en)
+pacman::p_load(NLP, openNLP, openNLPmodels.en)
+
+s <- "I do refer to the noble lord, lord Howard, in this string."
+s <- appearances_tib$speeches[[1]] 
+
 string_s <- as.String(s)
+
 mea <- Maxent_Entity_Annotator(kind = "person")
 sent_token_annotator <-Maxent_Sent_Token_Annotator()
 word_token_annotator <-Maxent_Word_Token_Annotator()
@@ -98,7 +106,8 @@ a2
 k <- sapply(a2$features, `[[`, "kind")
 map(a2$features, `[[`, "kind")
 string_s[a2[k == "person"]]
-# want to find number of qs per x many words
+
+# This catches some names my regex doesn't, but also misses others.
 
 # Words in context ----
 
