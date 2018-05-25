@@ -121,4 +121,50 @@ full_speeches %<>% mutate(all_speeches = map(all_speeches, str_to_lower))
 full_speeches$all_speeches[[1]] %>% wordInContext_rgx("eu")
 full_speeches$all_speeches[[1]] %>% wordInContext_rgx("rights")
 
-# 
+wic_sentence <- function(txt, word) {
+  endpuncs <- "(\\?|\\.|\\!)"
+  txt %>% str_extract_all(str_c("(\\.|\\!|\\?)[^.!?]+\\W", word, "(\\.|\\W[^.!?]*?(\\.|\\!|\\?))")) %>% `[[`(1)
+
+}
+
+wic_sentence(full_speeches$all_speeches[[1]], "eu") 
+wic_sentence(full_speeches$all_speeches[[1]], "government") 
+
+# Now some sentiment analysis, or identify the verbs and adjectives used with the word. 
+
+pacman::p_load(openNLP, NLP, openNLPmodels.en)
+pos_tag_abbrs <- readRDS("data//pos_tag_abbrs.RDAT")
+anno_ <- function(p = "NN") {
+  build_annos <- map_lgl(c("sent_token_annotator", "word_token_annotator", "pos_token_annotator"), exists)
+  if(sum(build_annos != 3)) {  
+    sent_token_annotator <- Maxent_Sent_Token_Annotator()
+    word_token_annotator <- Maxent_Word_Token_Annotator()
+    pos_tag_annotator <- Maxent_POS_Tag_Annotator()
+  }
+
+  anno <- function(otxt, pat = p) {
+    txt <- as.String(otxt)
+    a2 <- annotate(txt, list(sent_token_annotator, word_token_annotator))
+    a3 <- annotate(txt, pos_tag_annotator, a2)
+    #a3probs <- annotate(txt, Maxent_POS_Tag_Annotator(probs = TRUE), a2)
+    #a3pw <- subset(a3probs, type == "word")
+    #probs <- sapply(a3pw$features, `[[`, "POS_prob")
+    a3w <- subset(a3, type == "word")
+    tags <- sapply(a3w$features, `[[`, "POS")
+    tags_f <- tags[str_detect(txt[a3w], "[A-Za-z]")]
+    txt_tib <- tibble(word = txt[a3w], tags)
+    txt_tib %>%
+      filter(str_detect(tags, pat)) %>% left_join(pos_tag_abbrs, by = c("tags" = "abbreviation")) %>% filter(!str_detect(word, "\\W"))
+  } 
+}
+noun_anno <- anno_("NN")
+verb_anno <- anno_("V")
+adj_anno <- anno_("J")
+gov_sents <- wic_sentence(full_speeches$all_speeches[[1]], "government") 
+uk_sents <- wic_sentence(full_speeches$all_speeches[[1]], "uk") 
+gov_sents %>% map(verb_anno)
+gov_sents %>% map(noun_anno)
+gov_sents %>% map(adj_anno)
+uk_sents %>% map(adj_anno)
+
+# need to filter words for nontext chars
