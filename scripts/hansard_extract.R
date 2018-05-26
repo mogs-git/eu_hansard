@@ -58,3 +58,8 @@ appearances_tib$party_f %>% levels()
 
 saveRDS(appearances_tib, "data//appearances.RDAT")
 saveRDS(speech_tib, "data//full_speeches.RDAT")
+
+
+party_id_tib <- distinct(full_speeches, name, party)
+(party_id_tib %<>% keep_main_parties())
+saveRDS(party_id_tib, "data//party_id_tib.RDAT")

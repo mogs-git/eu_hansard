@@ -2,6 +2,12 @@ library(tidygraph)
 library(ggraph)
 library(igraph)
 
+pacman::p_load(tidyverse, magrittr, tidytext, stringr)
+
+full_speeches <- readRDS("data//full_speeches.RDAT")
+appearances_tib <- readRDS("data//appearances.RDAT")
+`%!in%` <- negate(`%in%`)
+
 # remove speeches that just say "my lords"
 appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[^, ]"))
 
@@ -54,11 +60,14 @@ paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(wei
 tidygraph <- as_tbl_graph(g2)
 (lord_edges <- edgy_lords[!duplicated(edgy_lords)] %>% as.tibble() %>% mutate(r = row_number()))
 
+pjoin <- party_id_tib %>% select(-party) %>% rename(party = party_f)
+
 # add some extra features to graph data
 tidygraph %<>% 
+  activate(nodes) %>%
   mutate(centrality = centrality_authority()) %>% 
   mutate(top = centrality > sort(centrality, decreasing = T)[11]) %>%
-  left_join(pjoin, by = c('name' = 'surname')) %>%
+  left_join(pjoin) %>%
   mutate(party = as.factor(party)) %>%
   activate(edges) %>%
   left_join(lord_edges, by = c('from' = 'r')) %>%
@@ -68,7 +77,11 @@ tidygraph %<>%
 topnames <- tidygraph %>% activate(nodes) %>% filter(top) %>% pull(name)
 tory_lords <- tidygraph  %>% activate(nodes) %>% filter(party == "(Con)") %>% pull(name)
 labour_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(Lab)") %>% pull(name)
+libdem_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(LD)") %>% pull(name)
+cb_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(CB)") %>% pull(name)
+
 tidygraph %<>% activate(edges) %>% mutate(weights = paired_seq_tib$weights)
+mycols <- c("dodgerblue3", "forestgreen", "goldenrod1", "firebrick2", "grey30")
 
 tidygraph %>%
   mutate(top_edge = ifelse(value.x %in% topnames | value.y %in% topnames, 1, 0.2)) %>%
@@ -76,6 +89,7 @@ tidygraph %>%
   geom_edge_link(aes(alpha = top_edge, width = weights)) + 
   scale_edge_width(range = c(0.5,1.5)) +
   geom_node_point(aes(size = centrality, colour = party)) +
+  scale_colour_manual(values = mycols) +
   geom_node_label(aes(filter = top, label = name, alpha = 0, size = 0.2), nudge_x = 0.25, nudge_y = -0.3, label.padding = unit(0.1, 'lines')) +
   theme_graph()
 
@@ -85,6 +99,7 @@ tidygraph %>%
   geom_edge_link(aes(alpha = top_edge, width = weights)) + 
   scale_edge_width(range = c(0.5,1.5)) +
   geom_node_point(aes(size = centrality, colour = party)) +
+  scale_colour_manual(values = mycols) +
   geom_node_label(aes(filter = top, label = name, alpha = 0, size = 0.2), nudge_x = 0.25, nudge_y = -0.15, label.padding = unit(0.1, 'lines')) +
   theme_graph()
 
@@ -99,35 +114,54 @@ tidygraph %>%
   geom_node_label(aes(filter = top, label = name, alpha = 0, size = 0.2), nudge_x = 0.25, nudge_y = -0.15, label.padding = unit(0.1, 'lines')) +
   theme_graph() 
 
-# Pure tory edges
-tidygraph %>%
-  mutate(tory_edge = ifelse(value.x %in% tory_lords & value.y %in% tory_lords, TRUE, FALSE)) %>%
-  activate(nodes) %>%
-  mutate(tory = ifelse(name %in% tory_lords, TRUE, FALSE)) %>%
-  activate(edges) %>% 
-  ggraph(layout = 'lgl') + 
-  geom_edge_link(aes(alpha = tory_edge, colour = tory_edge, width = weights)) +
-  scale_edge_width(range = c(0.5,1.5)) +
-  scale_edge_alpha_manual(values = c(0, 0.5)) +
-  scale_edge_colour_manual(values = c("blue", "blue")) +
-  geom_node_point(aes(filter = tory, size = centrality)) +
-  geom_node_label(aes(filter = tory, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
-  theme_graph()
+# Pure party edges
+pure_party_edge_plot <- function(tidygraph, lords, clrs) {
+  tidygraph %>%
+    mutate(group_edge = ifelse(value.x %in% lords & value.y %in% lords, TRUE, FALSE)) %>%
+    activate(nodes) %>%
+    mutate(lord_group = ifelse(name %in% lords, TRUE, FALSE)) %>%
+    activate(edges) %>% 
+    ggraph(layout = 'dh') + 
+    geom_edge_link(aes(alpha = group_edge, colour = group_edge, width = weights)) +
+    scale_edge_width(range = c(0.5,1.5)) +
+    scale_edge_alpha_manual(values = c(0, 0.5)) +
+    scale_edge_colour_manual(values = clrs) +
+    geom_node_point(aes(filter = lord_group, size = centrality)) +
+    #geom_node_label(aes(filter = lord_group, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
+    theme_graph() + theme(legend.position="none")
+}
+pure_party_edge_plot(tidygraph, tory_lords, c("blue", "blue"))
+ggpubr::ggarrange(pure_party_edge_plot(tidygraph, tory_lords, c("blue", "blue")),
+                  pure_party_edge_plot(tidygraph, labour_lords, c("red", "red")),
+                  pure_party_edge_plot(tidygraph, libdem_lords, c("yellow", "yellow")),
+                  pure_party_edge_plot(tidygraph, cb_lords, c("green", "green")))
+                  
 
-# Pure labour edges
-tidygraph %>%
-  mutate(labour_edge = ifelse(value.x %in% labour_lords & value.y %in% labour_lords, TRUE, FALSE)) %>%
-  activate(nodes) %>%
-  mutate(labour = ifelse(name %in% labour_lords, TRUE, FALSE)) %>%
-  ggraph(layout = 'fr') + 
-  geom_edge_link(aes(alpha = labour_edge, colour = labour_edge, width = weights)) +
-  scale_edge_width(range = c(0.5,1.5)) +
-  scale_edge_alpha_manual(values = c(0, 0.5)) +
-  scale_edge_colour_manual(values = c("red", "red")) +
-  geom_node_point(aes(filter = labour, size = centrality)) +
-  geom_node_label(aes(filter = labour, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
-  theme_graph() 
+# single speaker edges
+ss_edge_plot <- function(tidygraph, speaker) {
+  tidygraph %<>%
+    mutate(group_edge = ifelse(value.x %in% speaker | value.y %in% speaker, TRUE, FALSE)) %>%
+    activate(nodes) %>%
+    mutate(lord_group = ifelse(name %in% speaker, TRUE, FALSE)) 
+  
+  speaker_connections <- tidygraph %>% activate(edges) %>% filter(group_edge) %>% select(value.x, value.y) %>% E() %>% attr(which = "vnames") %>% str_split("\\|") %>% unlist() %>% unique()
+  tidygraph %>% 
+    mutate(speaker_cons = ifelse(name %in% speaker_connections, TRUE, FALSE)) %>%
+    ggraph(layout = 'dh') + 
+    geom_edge_link(aes(alpha = group_edge, width = weights)) +
+    scale_edge_width(range = c(0.5,1.5)) +
+    scale_edge_alpha_manual(values = c(0.2, 0.8)) +
+    #scale_edge_colour_manual(values = clrs) +
+    geom_node_point(aes(colour = speaker_cons, shape = lord_group)) +
+    geom_node_label(aes(filter = speaker_cons, label = name, alpha = 0, size = 0.02), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
+    theme_graph() + theme(legend.position="none")
+}
 
+ss_edge_plot(tidygraph, "Howard")
+top4 <- speech_counts %>% head(4) %>% pull(name)
+top4_networds <- map(top4, ~ss_edge_plot(tidygraph, .))
+ggpubr::ggarrange(top4_networds[[1]], top4_networds[[2]], top4_networds[[3]], top4_networds[[4]],
+                  nrow = 2, ncol = 2)
 # Labour + Tory edges
 
 tidygraph %>%
@@ -135,14 +169,16 @@ tidygraph %>%
                               ifelse(value.x %in% tory_lords & value.y %in% tory_lords, "tory",
                                      ifelse((value.x %in% tory_lords & value.y %in% labour_lords) | (value.x %in% labour_lords & value.y %in% tory_lords), "mixed", "NA")))) %>%
   activate(nodes) %>%
-  mutate(labour = ifelse(name %in% labour_lords | name %in% tory_lords, TRUE, FALSE)) %>%
+  mutate(labourortory = ifelse(name %in% labour_lords | name %in% tory_lords, TRUE, FALSE),
+         labour = ifelse(name %in% labour_lords, TRUE, FALSE)) %>%
   ggraph(layout = 'kk') + 
-  geom_edge_link(aes(alpha = edge_col, colour = edge_col, width = weights)) +
+  geom_edge_link(aes(filter = edge_col == "labour"|edge_col == "tory"|edge_col == "mixed", alpha = edge_col, colour = edge_col, width = weights)) +
   scale_edge_width(range = c(0.5,1.5)) +
-  scale_edge_alpha_manual(values = c(1, 1,0.5,0)) +
-  scale_edge_colour_manual(values = c("red", "blue", "purple", "grey")) +
-  geom_node_point(aes(filter = labour, size = centrality)) +
-  geom_node_label(aes(filter = labour, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 0.2, label.padding = unit(0.1, 'lines')) +
+  scale_edge_alpha_manual(values = c(1, 0.8,1,0)) +
+  scale_edge_colour_manual(values = c("red", "purple", "blue", "grey")) +
+  geom_node_point(aes(filter = labourortory, size = centrality, colour = labour)) +
+  scale_colour_manual(values = c("blue", "red")) +
+  geom_node_label(aes(filter = labourortory, label = name, alpha = 0, size = 0.2), nudge_x = 0, nudge_y = 0.4, label.padding = unit(0.1, 'lines')) +
   theme_graph() 
 
 # Do lords who say the most make the most connections?
@@ -166,3 +202,39 @@ tidygraph %>%
   geom_node_point(aes(size = word_count, colour = party)) +
   geom_node_label(aes(filter = top, label = name, alpha = 0), nudge_x = 0.25, nudge_y = -0.3, label.padding = unit(0.1, 'lines')) +
   theme_graph()
+
+# Simpler features that inform our understanding of the network
+
+# Which lords spoke most often?
+speech_counts <- appearances_tib_f %>% group_by(name) %>% count() %>% arrange(desc(n)) 
+speech_counts %>% ggplot(aes(n)) + geom_histogram(bins = 12) + scale_x_continuous(breaks = 1:12)
+quantile(speech_counts$n, 0.9) 
+ecdf(speech_counts$n)(3)
+ecdf(speech_counts$n)(1)
+median(speech_counts$n)
+party_id_tib <- readRDS("data//party_id_tib.RDAT") %>% left_join(surname_join) %>% select(-name) %>% rename(name = surname)
+speech_counts %<>% left_join(party_id_tib)
+
+appearances_tib_f %>% filter(name == "Howard") %>% View()
+words_per_speech %>% filter(str_detect(name, "Howard"))
+
+appearances_tib_f %>% filter(name == "Taylor") %>% View()
+words_per_speech %>% filter(str_detect(name, "Taylor"))
+
+
+# testing network d3
+https://christophergandrud.github.io/networkD3/#simple
+install.packages("networkD3")
+
+subgrps <- cluster_walktrap(tidygraph)
+members <- membership(subgrps)
+
+d3_tidygraph <- networkD3::igraph_to_networkD3(tidygraph, group = members)
+
+# Create force directed network plot
+networkD3::forceNetwork(Links = d3_tidygraph$links, Nodes = d3_tidygraph$nodes, 
+             Source = 'source', Target = 'target', 
+             NodeID = 'name', Group = 'group')
+
+
+# That was way too easy.... how hard is this going to come back and bite me in the arse?
