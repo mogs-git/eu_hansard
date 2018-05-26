@@ -238,3 +238,33 @@ networkD3::forceNetwork(Links = d3_tidygraph$links, Nodes = d3_tidygraph$nodes,
 
 
 # That was way too easy.... how hard is this going to come back and bite me in the arse?
+
+# let's just, out of interest, see if Taylor breaks in tories more often than other parties
+
+sequence_tib %>% filter(name == "Taylor") %>% count(party_shift)
+
+# surprise surprise, the tory vouches for his tory pals 66% of the time, and lab/lib 16%.
+
+# is this because the previous speakers were often labour/lib?
+# seq_tib r got fucked becuase I remvoed "noble lords-"
+sequence_tib %<>% mutate(r = row_number())
+r_interruptions <- sequence_tib %>% filter(name == "Taylor") %>% pull(r)
+rs <- r_interruptions %>% as.list()  %>% map(function(r) c((r-1):(r-1))) %>% unlist() %>% unique()
+sequence_tib %>% filter(r %in% rs) %>% mutate(interruption = ifelse(r %in% r_interruptions, T, F)) %>% arrange(r) %>% View()
+rs2 <-  r_interruptions %>% as.list()  %>% map(function(r) c((r-1):(r+1))) %>% unlist() %>% unique()
+sequence_tib %>% filter(r %in% rs2) %>% mutate(interruption = ifelse(r %in% r_interruptions, T, F)) %>% arrange(r) %>% View()
+
+rsm1 <-  r_interruptions %>% as.list()  %>% map(function(r) c((r-1))) %>% unlist() %>% unique()
+rsp1 <- r_interruptions %>% as.list()  %>% map(function(r) c((r+1))) %>% unlist() %>% unique()
+sequence_tib %>% filter(r %in% rsm1) %>% mutate(interruption = ifelse(r %in% r_interruptions, T, F)) %>% arrange(r) %>% 
+  filter(name != "Taylor") %>% pull(party)
+sequence_tib %>% filter(r %in% rsp1) %>% mutate(interruption = ifelse(r %in% r_interruptions, T, F)) %>% arrange(r) %>% 
+  filter(name != "Taylor") %>% pull(party)
+
+# some weird interactions where it looks like taylor was interrupted, so the guy
+# following him is himself (of course, another tory)
+
+# however, even if we remove these instances, he still passes on to tories quite often
+# i.e. 6/10 times
+
+# yeah lets be real he's biased
