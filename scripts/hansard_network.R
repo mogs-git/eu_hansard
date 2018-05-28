@@ -57,6 +57,26 @@ paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(wei
 # remember it does not make sense to compare order here (for that look at name/name_shift)
 # because lords were sorted alphabetically first.
 
+# counts of connections
+c1 <- paired_seq_tib %>% ungroup() %>% select(px, weights)
+c2 <- paired_seq_tib %>% ungroup() %>% select(py, weights) %>% rename(px = py)
+total_connections <- c1 %>% bind_rows(c2) %>% group_by(px) %>% summarise(s = sum(weights))
+
+# n unique connections
+c3 <- paired_seq_tib %>% count(px)
+c4 <- paired_seq_tib %>% count(py) %>% rename(px = py)
+unique_connections <- c3 %>% bind_rows(c4) %>% group_by(px) %>% summarise(su = sum(n))
+
+total_connections %<>% left_join(unique_connections) %>% group_by(px) %>% mutate(sr = su/s) %>% arrange(sr)
+hist(total_connections$s, breaks = 20)  
+total_connections %>% filter(s > 20)
+total_connections %<>% arrange(desc(su)) %>% left_join(party_id_tib, by = c("px" = "surname"))
+total_connections %>% arrange(desc(su)) %>% ggplot(aes(su, sr)) + geom_point()
+
+total_connections %>% filter(s != 2) %>% group_by(sr) %>% count(party_f) %>% ggplot(aes(sr, n, fill = party_f)) + geom_col() + facet_wrap(~party_f)
+total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + geom_freqpoly()
+total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + stat_ecdf()
+
 # Visualise
 tidygraph <- as_tbl_graph(g2)
 (lord_edges <- edgy_lords[!duplicated(edgy_lords)] %>% as.tibble() %>% mutate(r = row_number()))
@@ -149,7 +169,7 @@ ss_edge_plot <- function(tidygraph, speaker, node_var = NA, coords = NA) {
     scale_edge_width(range = c(0.5,1.5)) +
     scale_edge_alpha_manual(values = c(0.1, 0.8)) +
     #scale_edge_colour_manual(values = clrs) +
-    geom_node_point(aes(filter = speaker_cons|t4, colour = t4, shape = lord_group)) +
+    geom_node_point(aes(filter = speaker_cons|t4, colour = t4, shape = lord_group, size = centrality)) +
     #geom_node_label(aes(filter = speaker_cons, label = name, alpha = 0, size = 0.02), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
     theme_graph() + theme(legend.position="none") + ggtitle(speaker)
 }
@@ -163,7 +183,7 @@ top4_networks <- map(top4, ~ss_edge_plot(tidygraph, ., top4, coords))
 ggpubr::ggarrange(top4_networks[[1]], top4_networks[[2]], top4_networks[[3]], top4_networks[[4]],
                   nrow = 2, ncol = 2)
 
-top4_networks[[4]]
+appearances_tib_f %>% filter(str_detect(name, "Keen")) %>% View()
 
 
 # Labour + Tory edges
