@@ -9,15 +9,15 @@ appearances_tib <- readRDS("data//appearances.RDAT")
 party_id_tib <- readRDS("data//party_id_tib.RDAT")
 `%!in%` <- negate(`%in%`)
 
+source("scripts/hansard_src.R")
+
 # remove speeches that just say "my lords"
 appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[^, ]"))
 
 # call lords by surname for plotting purposes
-surname <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+)") 
-surname <- surname[,2]
-# Rename duplicated surnames
-full_speeches$name[which(surname == "Smith")]
-surname[40] <- "Smith_Newnham"
+
+surname <- get_surnames(full_speeches$name) 
+
 surname_join <- tibble(name = full_speeches$name, surname)
 appearances_tib_f %<>% left_join(surname_join) %>% mutate(name = surname) %>% select(-surname)
 
@@ -46,9 +46,7 @@ nodes <- appearances_tib_f %>% pull(name)
 g2 <- graph( edges=edgy_lords, directed=F ) 
 
 paired_seq_tib %>% arrange(desc(weights))
-pjoin <- surname_join %>% left_join(select(full_speeches, name, party)) %>% select(surname, party)
-main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
-pjoin %<>% mutate(party = ifelse(party %in% main_parties, party, 'Other'))
+pjoin <- party_id_tib %>% select(-name, -party) %>% mutate(party = as.character(party_f)) %>% select(-party_f)
 paired_party_tib <- paired_seq_tib %>% ungroup() %>% left_join(pjoin, by = c('px' = 'surname')) %>% left_join(pjoin, by = c('py' = 'surname')) %>%
   mutate(px = pmin(party.x, party.y), py = pmax(party.x, party.y)) 
 
@@ -76,6 +74,9 @@ total_connections %>% arrange(desc(su)) %>% ggplot(aes(su, sr)) + geom_point()
 total_connections %>% filter(s != 2) %>% group_by(sr) %>% count(party_f) %>% ggplot(aes(sr, n, fill = party_f)) + geom_col() + facet_wrap(~party_f)
 total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + geom_freqpoly()
 total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + stat_ecdf()
+
+total_connections %>% filter(s > 2) %>% group_by(party_f) %>% summarise(median_s = median(s), median_u = median(su), median_su = median_u/median_s)
+total_connections %>% filter(s > 2) %>% ggplot(aes(su/s))+ geom_histogram() + facet_wrap(~party_f) + coord_cartesian(xlim = c(0,1))
 
 # Visualise
 tidygraph <- as_tbl_graph(g2)
@@ -137,7 +138,7 @@ pure_party_edge_plot <- function(tidygraph, lords, clrs) {
     activate(edges) %>% 
     ggraph(layout = 'dh') + 
     geom_edge_link(aes(alpha = group_edge, colour = group_edge, width = weights)) +
-    scale_edge_width(range = c(0.5,1.5)) +
+    scale_edge_width(range = c(0.5,2)) +
     scale_edge_alpha_manual(values = c(0, 1)) +
     scale_edge_colour_manual(values = clrs) +
     geom_node_point(aes(filter = lord_group, size = centrality)) +
@@ -247,9 +248,10 @@ words_per_speech %>% filter(str_detect(name, "Taylor"))
 
 
 # testing network d3
-https://christophergandrud.github.io/networkD3/#simple
+# https://christophergandrud.github.io/networkD3/#simple
 install.packages("networkD3")
 
+library(networkD3)
 subgrps <- cluster_walktrap(tidygraph)
 members <- membership(subgrps)
 
@@ -258,9 +260,24 @@ d3_tidygraph <- networkD3::igraph_to_networkD3(tidygraph, group = members)
 # Create force directed network plot
 networkD3::forceNetwork(Links = d3_tidygraph$links, Nodes = d3_tidygraph$nodes, 
              Source = 'source', Target = 'target', 
-             NodeID = 'name', Group = 'group')
+             NodeID = 'name', Group = 'group', opacity = 1)
 
 
+pp_edge_graph <- pure_party_edge_plot <- function(tidygraph, lords, clrs) {
+  tidygraph %>%
+    mutate(group_edge = ifelse(value.x %in% lords & value.y %in% lords, TRUE, FALSE)) %>%
+    activate(nodes) %>%
+    mutate(lord_group = ifelse(name %in% lords, TRUE, FALSE)) %>%
+    filter(lord_group)
+}
+tory_force_graph <- pp_edge_graph(tidygraph, tory_lords, c(mycols[1], mycols[1]))
+subgrps <- cluster_walktrap(tory_force_graph)
+members <- membership(subgrps)
+tory_force_graph <- networkD3::igraph_to_networkD3(tory_force_graph, group = members)
+networkD3::forceNetwork(Links = tory_force_graph$links, Nodes = tory_force_graph$nodes,
+                        Source = 'source', Target = 'target', 
+                        NodeID = 'name', Group = 'group', opacity = 1, fontSize = 20)
+                                        
 # That was way too easy.... how hard is this going to come back and bite me in the arse?
 
 # let's just, out of interest, see if Taylor breaks in tories more often than other parties
