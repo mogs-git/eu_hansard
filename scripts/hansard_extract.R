@@ -43,12 +43,7 @@ speech_tib <- reduce_speeches(appearances_tib)
 
 # Reduce party data
 
-keep_main_parties <- function(df) {
-  main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
-  df %<>% mutate(party_f = ifelse(party %!in% main_parties, "other", party)) 
-  df$party_f <- fct_relevel(df$party_f, c("(Con)", "(CB)", "(LD)", "(Lab)", "other"))
-  df
-}
+
 main_parties <- c("(Con)", "(Lab)", "(CB)", "(LD)")
 appearances_tib %<>% mutate(r = row_number(), party_f = ifelse(party %!in% main_parties, "other", party)) 
 appearances_tib$party_f <- fct_relevel(appearances_tib$party_f, c("(Con)", "(CB)", "(LD)", "(Lab)", "other"))
@@ -60,6 +55,51 @@ saveRDS(appearances_tib, "data//appearances.RDAT")
 saveRDS(speech_tib, "data//full_speeches.RDAT")
 
 
+get_surnames <- function(names) {
+  # take a vector of names + epiphets, and extract second word (surname)
+  pulled_names <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+[-']?\\w+)(\\W\\w+(?!of))?") 
+  
+  # If name is double barelled but has no "-", e.g. De Mauley, then concatenate
+  for(i in seq_along(pulled_names[,3])) {
+    if (!str_detect(pulled_names[,3][i], "of|and") & !is.na(pulled_names[,3][i])) {
+      pulled_names[,2][i] <- str_c(pulled_names[,2][i], "_", str_extract(pulled_names[,3][i], "\\w+"))
+    }
+  }
+  surname <- pulled_names[,2]
+  
+  # Find duplicates
+  dups <- get_duplicates(surname) %>% keep(!is.na(.))
+  replacements <- list()
+  for (i in seq_along(dups)) {
+    indexes <- dups[[i]]
+    for (j in seq_along(indexes)) {
+      fulnam <- str_match_all(names[[indexes[[j]]]], "\\w+") %>% unlist()
+      if (length(fulnam) >= 4) {
+        replacements <- list_push(replacements, c(str_c(fulnam[2], "_", fulnam[4]), indexes[j]))
+      }
+    }
+  }
+  replacements <- replacements[!duplicated(replacements)]
+  for (i in seq_along(replacements)) {
+    surname[[as.numeric(replacements[[i]][2])]] <- replacements[[i]][1]
+  }
+  surname
+}
+
+get_duplicates <- function(vec) {
+  dups <- list()
+  for (i in seq_along(vec)) {
+    dups[[i]] <- which(vec == vec[i])
+    if(length(dups[[i]]) == 1) {
+      dups[[i]] <- NA
+    }
+    names(dups)[[i]] <- vec[i]
+  }
+  dups
+}
+
+surname <- get_surnames(speech_tib$name) 
+surname_join <- tibble(name = speech_tib$name, surname = surname)
 party_id_tib <- distinct(full_speeches, name, party)
-(party_id_tib %<>% keep_main_parties())
+(party_id_tib %<>% keep_main_parties() %>% left_join(surname_join))
 saveRDS(party_id_tib, "data//party_id_tib.RDAT")

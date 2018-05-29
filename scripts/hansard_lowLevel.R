@@ -124,7 +124,6 @@ full_speeches$all_speeches[[1]] %>% wordInContext_rgx("rights")
 wic_sentence <- function(txt, word) {
   endpuncs <- "(\\?|\\.|\\!)"
   txt %>% str_extract_all(str_c("(\\.|\\!|\\?)[^.!?]+\\W", word, "(\\.|\\W[^.!?]*?(\\.|\\!|\\?))")) %>% `[[`(1)
-
 }
 
 wic_sentence(full_speeches$all_speeches[[1]], "eu") 
@@ -167,4 +166,4 @@ gov_sents %>% map(noun_anno)
 gov_sents %>% map(adj_anno)
 uk_sents %>% map(adj_anno)
 
-# need to filter words for nontext chars
+
