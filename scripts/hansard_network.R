@@ -17,13 +17,12 @@ appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[
 # call lords by surname for plotting purposes
 
 surname <- get_surnames(full_speeches$name) 
-
 surname_join <- tibble(name = full_speeches$name, surname)
 appearances_tib_f %<>% left_join(surname_join) %>% mutate(name = surname) %>% select(-surname)
 
 # Get all pairs of speakers and parties.
 # arrange pairs in alphabetical order to be counted.
-sequence_tib <- appearances_tib_f %>% select(-speeches)
+sequence_tib <- appearances_tib_f %>% select(-party) %>% rename(party = party_f) %>% select(name, party)
 sequence_tib %<>% mutate(name_shift = lead(name), party_shift = lead(party))
 sequence_tib %<>% mutate(px = pmin(name, name_shift), py = pmax(name, name_shift))
 
@@ -51,7 +50,7 @@ paired_party_tib <- paired_seq_tib %>% ungroup() %>% left_join(pjoin, by = c('px
   mutate(px = pmin(party.x, party.y), py = pmax(party.x, party.y)) 
 
 # counts of pairs
-paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(weights)) %>% arrange(desc(total_interactions)) %>% View()
+paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(weights)) %>% arrange(desc(total_interactions))
 # remember it does not make sense to compare order here (for that look at name/name_shift)
 # because lords were sorted alphabetically first.
 

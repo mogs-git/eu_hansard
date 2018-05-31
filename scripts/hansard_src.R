@@ -25,8 +25,8 @@ list_push <- function(l, a) {
 # Returns: A vector of surnames
 get_surnames <- function(names) {
   # take a vector of names + epiphets, and extract second word (surname)
-  pulled_names <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+[-']?\\w+)(\\W\\w+(?!of))?") 
-  
+  #pulled_names <- full_speeches$name %>% str_match("^(?:\\w+\\s)(\\w+[-']?\\w+)(\\W\\w+(?!of))?") 
+  pulled_names <- names %>% str_match("^(?:\\w+\\s)(\\w+[-']?\\w+)(\\W\\w+(?!of))?") 
   # If name is double barelled but has no "-", e.g. De Mauley, then concatenate
   for(i in seq_along(pulled_names[,3])) {
     if (!str_detect(pulled_names[,3][i], "of|and") & !is.na(pulled_names[,3][i])) {

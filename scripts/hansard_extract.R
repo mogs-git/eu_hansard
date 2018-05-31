@@ -13,7 +13,24 @@ pacman::p_load(tidyverse, stringr, forcats, purrr, magrittr, tidytext, reshape2,
 # extract ----
 
 names <- extract_names(eu)
+tib <- tibble(name = names,
+              containing_party = str_detect(names, "\\(")) 
+
+tib_party <- filter(tib, containing_party == TRUE)
+tib_party <- tibble(
+  name = str_extract(tib_party$name, "[a-zA-Z ',\\-]+"),
+  party = str_extract(tib_party$name, "\\([^()]+\\)")
+)
+tib_party <- unique(tib_party)
+tib$name <- str_replace(tib$name, "\\(.+\\)", "")
+tib$name <- trimws(tib$name)
+tib_party$name <- trimws(tib_party$name)
+
+ID_tib <- left_join(tib, tib_party) %>% select(name, party)
+surname_join <- tibble(name = unique(ID_tib$name), surname = get_surnames(unique(ID_tib$name)))
 appearances_tib <- get_parties(names)
+
+# For missing lords, rather than play around with text, just web scrape. 
 
 # Manually fix Lords missing parties ----
 appearances_tib %>% filter(is.na(party)) %>% unique()

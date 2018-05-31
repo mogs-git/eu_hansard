@@ -125,3 +125,70 @@ date <- datage[[1]][1]
 age <- datage[[1]][2]
 date
 age
+
+# pull first paragraph. 
+
+
+getParaFromLink <- function(link) {
+  link %>%
+    read_html() %>%
+    html_nodes("p:nth-child(2), p:nth-child(3)") %>%
+    html_text()
+}
+paras <- map(lord_links[50:60], getParaFromLink)
+paras[[1]]
+
+parties <- c("Labour", "Conservative", "Liberal", "Crossbench")
+
+getLordsSpiritual <- function(link= "https://en.wikipedia.org/wiki/Members_of_the_House_of_Lords") {
+  bishops <- link %>%
+    read_html() %>%
+    html_nodes(":nth-child(9) td:nth-child(1) a") %>%
+    html_text() 
+  bishops <- bishops[str_detect(bishops, "Bishop|bishop")]
+  bishops
+}
+
+getLordsSpiritual()
+
+getLordsNames <- function(link = "https://en.wikipedia.org/wiki/Members_of_the_House_of_Lords"){
+  lords <- link %>%
+    read_html() %>%
+    html_nodes("td:nth-child(1) a") %>%
+    html_text()
+  lords <- lords[!str_detect(lords, "[0-9]")]
+  lords
+}
+
+getLordsNames()
+
+getLordsInfo <- function(link = "https://en.wikipedia.org/wiki/Members_of_the_House_of_Lords", xp){
+  print(xp)
+  print(typeof(xp))
+  lordsParties <- link %>%
+    read_html() %>%
+    html_nodes(xp) %>%
+    html_text()
+  lordsParties <- lordsParties[!str_detect(lordsParties, "[0-9]")]
+  lordsParties
+}
+all_name_xpaths <- str_c("tr:nth-child(", 1:754, ") td")
+map(getLordsInfo, all_name_xpaths)
+
+getLordsInfo(xp = ".jquery-tablesorter tr:nth-child(1) td:nth-child(1)")
+
+tables <- "https://en.wikipedia.org/wiki/Members_of_the_House_of_Lords" %>%
+  read_html() %>%
+  html_nodes("table") %>%
+  html_table(fill = TRUE)
+
+tables[[3]] %>% View()
+tables[[4]] %>% View()
+
+getLordsParties()
+getLordsNames()
+# pull text from education and see which mention prep schools
+# https://en.wikipedia.org/wiki/List_of_boarding_schools_in_the_United_Kingdom
+# https://en.wikipedia.org/wiki/List_of_independent_schools_in_England
+
+# What else is interesting to scrape that might lend to my analysis?
