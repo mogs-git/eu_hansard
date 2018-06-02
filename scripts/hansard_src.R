@@ -29,7 +29,7 @@ add_gender <- function(df = appearances_tib) {
 }
 
 # Extract the speech made by each lord in chronological order
-bind_speeches <- function(df = appearances_tib, text = eu) {
+bind_speeches <- function(df = appearances_tib, text = eu, rm_shouts = F) {
   
   names_search <- text %>% str_extract_all("\r\n\r\n((Lord|The Advocate|The Countess|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)") %>%
     unlist() 
@@ -41,11 +41,17 @@ bind_speeches <- function(df = appearances_tib, text = eu) {
   index <-sort(unlist(index))
   starts <- index[1:length(index)%%2 != 0]
   ends <- lead(starts)
+  actual_end <- str_locate(eu, "$")[1,2]
+  ends[length(ends)] <- actual_end
   speeches <- str_sub(text, start = starts, end = ends)
   
   speech_tib <- df %>% add_column(speeches)
   for (i in seq_along(speech_tib$speeches)){  
     speech_tib$speeches[i] <- str_sub(speech_tib$speeches[i], start = (str_count(names_search[i])+4))
+  }
+  
+  if (rm_shouts) {
+    speech_tib %<>% filter(!str_detect(speeches, "My Lords[^, ]"))
   }
   speech_tib
 }
@@ -94,7 +100,11 @@ get_parties <- function(name_vec) {
   # otherwise search the wiki table for the lord's name   
   missing_party_join <- tibble(name = wiki_ids$name[which(wiki_ids$name %in% missing$name)], party_wiki = wiki_ids$party[which(wiki_ids$name %in% missing$name)])                
   missing %<>% left_join(missing_party_join) %>%  mutate(party = ifelse(is.na(party), party_wiki, party)) %>% select(-party_wiki)
-  missing %<>% rename(party_missing = party)
+
+  # Party abbreviations
+  abbs <- tibble(party = c("Conservative", "Labour", "Liberal Democrats", "Crossbencher", "Ulster Unionist", "Green", "Plaid Cymru", "spiritual"), party_missing =  c("(Con)", "(Lab)", "(LD)", "(CB)", "(UUP)", "(GP)", "(PC)", "(spiritual)"))
+  
+  missing %<>% left_join(abbs) %>% select(-party)
   
   # return the ID tibble (name + party ordered by appearance)
   # but remember there may still be missing party assignments
@@ -211,6 +221,34 @@ add_gender <- function(df = appearances_tib) {
 # Counts ----
 
 # Order ----
+
+get_seq <- function(vec) {
+  grp_cnt <- NULL
+  count = 0
+  i = 1
+  while (i < length(vec)) {
+    count  = 0
+    j = i
+    while (j < length(vec)) {
+      if (is.na(vec[i]) | is.na(vec[j])) {
+        break
+      }
+      if (vec[i] == vec[j]) {
+        count = count + 1
+      } else  if (count > 1) {
+        i = i + count - 1
+        break
+      } else {
+        break
+      }
+      j = j + 1
+    }
+    grp_cnt <- c(grp_cnt, count)
+    i = i + 1
+  }
+  grp_cnt
+}
+
 
 # LowLevel ----
 # Input: a string of text data

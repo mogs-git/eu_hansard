@@ -1,15 +1,18 @@
 # load----
-pacman::p_load(tidyverse, magrittr, tidytext, stringr)
+pacman::p_load(tidyverse, magrittr, tidytext, stringr, ggpubr)
 
 full_speeches <- readRDS("data//full_speeches.RDAT")
 appearances_tib <- readRDS("data//appearances.RDAT")
+appearances_tib_f <- readRDS("data//appearances_f.RDAT")
 `%!in%` <- negate(`%in%`)
+party_cols <- c("dodgerblue3", "chartreuse3", "goldenrod1", "firebrick2", "grey30")
+
 
 # Get lenght of speeches
-appearances_tib_f <- appearances_tib %>% filter(!str_detect(speeches, "My Lords[^, ]"))
 # filter out cases of less than 50 characters
 
 # extract sequence of parties
+appearances_tib <- appearances_tib_f %>% select(-party) %>% rename(party = party_f)
 party_seq <- appearances_tib$party
 party_seq[which(is.na(party_seq))] <- "other"
 get_seq <- function(vec) {
@@ -47,28 +50,37 @@ ggplot(party_seq_tib) +
 party_seq_tib %<>% mutate(index = row_number())
 
 ggplot(party_seq_tib) +
-  geom_col(aes(index, run, fill = party), width = 1)
+  geom_col(aes(index, run, fill = party), width = 1) +
+  scale_fill_manual(values = party_cols) + 
+  theme_pubr()
 
 ggplot(party_seq_tib) +
-  geom_histogram(aes(run, fill = party))
+  geom_histogram(aes(run, fill = party)) +
+  scale_fill_manual(values = party_cols) + 
+  theme_pubr()
 
+tokenised_df <- readRDS("data/tokenised_df.RDAT")
 
-full_speeches %<>% mutate(party_f = ifelse(party %in% main_parties, party, 'other'))
+tokenised_df <- readRDS("data/tokenised_df.RDAT")
+party_id_tib <- readRDS("data/party_id_tib.RDAT")
+party_id <- party_id_tib %>% transmute(name = name, party = party_f)
 
-(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
-    group_by(r, name) %>% summarise(word_count = n()))
+(words_per_speech <- tokenised_df %>%
+    group_by(speech_id, name) %>% 
+    summarise(word_count = n()))
 
+# Who says more than the preceding guy most often?
 words_per_speech %>% 
-  left_join(select(full_speeches, name, party)) %>% keep_main_parties() %>% ungroup() %>% select(-party) %>%
-  mutate(party = party_f, next_party = lead(party), next_count = lead(word_count)) %>% 
+  left_join(party_id_tib) %>% ungroup() %>%
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>% 
   mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
   summarise(s = sum(s)) %>% arrange(desc(s)) %>%
   unite(pair, party, next_party) %>%
   ggplot(aes(fct_reorder(pair, s), s)) + geom_col() + theme(axis.text.x=element_text(angle=45, hjust=1))
 
 words_per_speech %>% 
-  left_join(select(full_speeches, name, party)) %>% keep_main_parties() %>% ungroup() %>% select(-party) %>%
-  mutate(party = party_f, next_party = lead(party), next_count = lead(word_count)) %>% 
+  left_join(party_id) %>% ungroup() %>%
+  mutate(next_party = lead(party), next_count = lead(word_count)) %>% filter(!is.na(next_party)) %>%
   mutate(s = next_count < word_count + 50) %>% group_by(party, next_party) %>%
   summarise(s = sum(s)) %>% arrange(desc(s)) %>% # spread(party, s)
   ggplot() + geom_tile(aes(party, next_party, fill = s))
