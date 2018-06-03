@@ -47,8 +47,8 @@ sections <- get_quartiles(appearances_tib)
 mycols = c("blue4", "chartreuse4", "gold1", "red3", "grey")
 
 ### output ####
-engagement_per_quarter <- appearances_tib %>% mutate(sec = sections) %>% group_by(sec, party_f) %>% count() %>%
-  ggplot(aes(party_f, n)) + geom_col(aes(fill = party_f)) + facet_wrap(~sec) + scale_fill_manual(values = mycols)
+engagement_per_quarter <- appearances_tib %>% mutate(sec = sections) %>% group_by(sec, party) %>% count() %>%
+  ggplot(aes(party, n)) + geom_col(aes(fill = party)) + facet_wrap(~sec) + scale_fill_manual(values = mycols)
 
 # Speeches as a proportion of total made that day by the party
 party_numbers <- full_speeches %>% keep_main_parties() %>% group_by(party_f) %>% summarise(party_total = length(party_f)) 

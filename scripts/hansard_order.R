@@ -59,6 +59,23 @@ ggplot(party_seq_tib) +
   scale_fill_manual(values = party_cols) + 
   theme_pubr()
 
+appearances_tib_fp %>%
+  mutate(speech_id = row_number()) %>%
+  ggplot(aes(speech_id, 1)) +
+  geom_col(aes(fill = party), width = 1) + 
+  scale_fill_manual(values = party_cols) + 
+  theme_pubr()
+
+# similar idea, but with words
+appearances_tib_fp %>% 
+  unnest_tokens(word, speeches) %>%
+  mutate(r = row_number()) %>%
+  ggplot(aes(r, 1)) + 
+  geom_col(aes(fill = party), width = 1) + 
+  scale_fill_manual(values = party_cols) + 
+  theme_pubr()
+
+
 tokenised_df <- readRDS("data/tokenised_df.RDAT")
 
 tokenised_df <- readRDS("data/tokenised_df.RDAT")
