@@ -44,6 +44,29 @@ total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + geom
 total_connections %>% filter(s > 2) %>% group_by(party_f) %>% summarise(median_s = median(s), median_u = median(su), median_su = median_u/median_s)
 total_connections %>% filter(s > 2) %>% ggplot(aes(su/s))+ geom_histogram() + facet_wrap(~party_f) + coord_cartesian(xlim = c(0,1))
 
+total_connections %<>% arrange(desc(sr)) %>% filter(s > 2) %>% add_gender()
+total_connections %>% group_by(gender) %>% summarise(median(sr))
+
+total_connections %<>% left_join(words_per_lord)
+words_per_lord_per_speech <- words_per_lord %>% left_join(speech_counts) %>% mutate(p = word_count/n)
+total_connections %>%
+  group_by(sr) %>%
+  summarise(m = mean(word_count, na.rm = T), s = sd(word_count, na.rm = T), upper = m+s, lower = m-s) %>%
+  print(.) %>%
+  ggplot(aes(sr, m)) + geom_point()
+
+total_connections %>% 
+  left_join(words_per_lord_per_speech) %>%
+  ggplot(aes(sr, p)) + geom_point(alpha = 0.2)
+  
+
+(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+    group_by(r, name) %>% summarise(word_count = n()))
+
+# Count total number of words said by each lord
+(words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name)))
+
+words_per_lord %<>% add_surname()
 
 speech_counts <- appearances_tib_fp %>% group_by(surname) %>% count() %>% arrange(desc(n)) 
 speech_counts %>% ggplot(aes(n)) + geom_histogram(bins = 12) + scale_x_continuous(breaks = 1:12)
@@ -277,7 +300,7 @@ tidygraph %>%
   geom_node_label(aes(filter = labourortory, label = name, alpha = 0, size = 0.2, hjust = 0, vjust = 0.1), label.padding = unit(0.1, 'lines')) +
   theme_graph() 
 
-# finging community structure: Random walks 
+# finging community structure: Random walks ----
 
 subgrps <- cluster_walktrap(tidygraph)
 subgrps <- cluster_spinglass(tidygraph)
@@ -296,6 +319,67 @@ tidygraph_wcom %>%
   geom_node_label(aes(filter = top, label = name, alpha = 0, size = 0.2), nudge_x = 0.25, nudge_y = -0.3, label.padding = unit(0.1, 'lines')) +
   theme_graph() +
   theme(legend.position="none")
+
+
+# Nodes connected to tories ----
+
+pullm <- function(df, vars) {
+  outlist <- list()
+  for(i in seq_along(vars)) {
+    outlist[[i]] <- pull(df, vars[[i]])
+  }
+  outlist
+}
+
+tory_connections <- tidygraph %>% filter(value.x %in% tory_lords |value.y %in% tory_lords) %>% pullm(c("value.x", "value.y"))
+
+tory_con_tib <- tibble(px = tory_connections[[1]], py = tory_connections[[2]])
+
+torycons <- appearances_tib_fp %>%
+  mutate(name_shift = lead(surname), party_shift = lead(party), next_speech = lead(speeches)) %>%
+  mutate(px = pmin(surname, name_shift), py = pmax(surname, name_shift))  %>%
+  semi_join(tory_con_tib)
+
+speech1 <- torycons$speeches[torycons$party != "(Con)"]
+speech2 <- torycons$next_speech[torycons$party_shift != "(Con)"]
+
+# all speeches connected to tories by speakers from other parties
+tory_connecting_speeches <- tibble(speeches = c(speech1, speech2))
+
+bing <- get_sentiments("bing")
+
+appearances_tib_fp %>% 
+  mutate(speech_id = row_number()) %>%
+  unnest_tokens(word, speeches) %>%
+  inner_join(bing) %>%
+  filter(word %!in% c("noble", "lord")) %>%
+  group_by(speech_id, sentiment) %>% 
+  count() %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  ggplot(aes(speech_id, n)) + geom_col(aes(fill = sentiment))
+
+appearances_tib_fp %>% 
+  mutate(speech_id = row_number()) %>%
+  unnest_tokens(word, speeches) %>%
+  inner_join(bing) %>%
+  filter(word %!in% c("noble", "lord")) %>%
+  group_by(speech_id, sentiment) %>% 
+  count() %>%
+  spread(sentiment, n) %>%
+  mutate(score = positive - negative) %>%
+  ggplot(aes(speech_id, score)) + geom_col()
+
+tory_connecting_speeches %>%
+  mutate(r = as.factor(row_number())) %>%
+  unnest_tokens(word, speeches) %>%
+  inner_join(bing) %>%
+  filter(word %!in% c("noble", "lord")) %>%
+  group_by(r, sentiment) %>% 
+  count() %>%
+  spread(sentiment, n) %>%
+  mutate(score = positive - negative) %>%
+  ggplot(aes(fct_reorder(r, score), score)) + geom_col()
+
 
 library(networkD3)
 
@@ -332,8 +416,24 @@ forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to",
              NodeID = "value", Group = "party", linkColour = edgecols,
              opacity = 1, fontSize = 16)
 
-# implement in visnetwork
-https://cran.r-project.org/web/packages/visNetwork/vignettes/Introduction-to-visNetwork.html
+# implement in visnetwork ----
+# https://cran.r-project.org/web/packages/visNetwork/vignettes/Introduction-to-visNetwork.html
+library(visNetwork)
+
+# Nodes and edges
+edges <- edgy_lords
+edges <- data.frame(from = edges[(1:length(edges) %% 2 ) != 0], to = edges[(1:length(edges) %% 2 ) == 0])
+nodes <- data.frame(nodes)
+
+#convert to numeric
+nodes %<>% mutate(r = row_number())
+edges %<>% left_join(nodes, by = c("from" = "nodes")) %>% left_join(nodes, by = c("to"="nodes"))
+edges %<>% rename(value.x = from, value.y = to, from = r.x, to = r.y)
+nodes %<>% rename(id = r)
+
+visNetwork(nodes, edges, width = "100%")
+
+visNetwork(nodes, edges, width = "100%")
 
 # Do lords who say the most make the most connections?
 
