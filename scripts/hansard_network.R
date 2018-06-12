@@ -46,6 +46,16 @@ total_connections %>% filter(s > 2) %>% ggplot(aes(su/s))+ geom_histogram() + fa
 
 total_connections %<>% arrange(desc(sr)) %>% filter(s > 2) %>% add_gender()
 total_connections %>% group_by(gender) %>% summarise(median(sr))
+# do women make more unique connections than men?
+women_data <- total_connections %>% filter(gender == "female") %>% pull(sr)
+men_data <- total_connections %>% filter(gender == "male") %>% pull(sr)
+hist(women_data)
+hist(men_data)
+t.test(women_data, men_data)
+# males just seem to have a subset of Lords who make repeated interactions more often, otherwise
+# the distributins are similar. From the frequency polygon, this is probably exclusively tory males.
+
+ggplot(total_connections, aes(fct_reorder(px, s), s)) + geom_col(aes(fill = sr), alpha = 0.8) + geom_col(aes(fct_reorder(px, s), su), fill = "chartreuse3", alpha = 0.9) + scale_fill_gradient(low = "orange", high = "blue") + theme_pubr() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 total_connections %<>% left_join(words_per_lord)
 words_per_lord_per_speech <- words_per_lord %>% left_join(speech_counts) %>% mutate(p = word_count/n)
@@ -56,11 +66,12 @@ total_connections %>%
   ggplot(aes(sr, m)) + geom_point()
 
 total_connections %>% 
+  filter(s > 2) %>%
   left_join(words_per_lord_per_speech) %>%
-  ggplot(aes(sr, p)) + geom_point(alpha = 0.2)
+  ggplot(aes(sr, p)) + geom_point(aes(colour = gender), alpha = 0.5) + geom_smooth()
   
 
-(words_per_speech <- appearances_tib %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
+(words_per_speech <- appearances_tib_fp %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
     group_by(r, name) %>% summarise(word_count = n()))
 
 # Count total number of words said by each lord
@@ -202,7 +213,7 @@ ggpubr::ggarrange(pure_party_edge_plot(tidygraph, tory_lords, c(party_cols[1], p
                   
 
 # single speaker edges
-ss_edge_plot <- function(tidygraph, speaker, node_var = NA, coords = NA) {
+ss_edge_plot <- function(tidygraph, speaker, node_var = NA, coords = NA, lbl_size = 0.2) {
   tidygraph %<>%
     mutate(group_edge = ifelse(value.x %in% speaker | value.y %in% speaker, TRUE, FALSE)) %>%
     activate(nodes) %>%
@@ -218,10 +229,10 @@ ss_edge_plot <- function(tidygraph, speaker, node_var = NA, coords = NA) {
     geom_edge_link(aes(alpha = group_edge, width = weights)) +
     scale_edge_width(range = c(0.5,1.5)) +
     scale_edge_alpha_manual(values = c(0.1, 0.8)) +
-    scale_edge_colour_manual(values = clrs) +
+    scale_colour_manual(values = party_cols) +
     geom_node_point(aes(filter = speaker_cons, colour = party, shape = lord_group, size = centrality)) +
-    #geom_node_label(aes(filter = speaker_cons, label = name, alpha = 0, size = 0.02), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
-    theme_graph() + theme(legend.position="none") + ggtitle(speaker)
+    geom_node_label(aes(filter = speaker_cons, label = name, alpha = 0.5, size = lbl_size), nudge_x = 0, nudge_y = 2, label.padding = unit(0.1, 'lines')) +
+    theme_graph() + theme(legend.position="none")# + ggtitle(speaker, )
 }
 
 coords <- create_layout(tidygraph, "dh") %>% select(x, y)
@@ -229,6 +240,20 @@ coords <- create_layout(tidygraph, "dh") %>% select(x, y)
 speech_counts %>% head(10)
 
 ss_edge_plot(tidygraph, "Lea", coords = coords)
+ss_edge_plot(tidygraph, "Tebbit", coords = coords)
+ss_edge_plot(tidygraph, "De_Mauley", coords = coords)
+ss_edge_plot(tidygraph, "Ludford", coords = coords, lbl_size = 0.5)
+
+
+ss_edge_plot(tidygraph, "Oates", coords = coords)
+ss_edge_plot(tidygraph, "Wigley", coords = coords)
+
+timeline1 <- appearances_tib_fp %>% ggplot(aes(r, 1)) + geom_point(alpha = 0.05) + geom_point(data = filter(appearances_tib_fp, surname == "Oates"), aes(r, 1), colour = "blue")
+
+timeline2 <- appearances_tib_fp %>% ggplot(aes(r, 1)) + geom_point(alpha = 0.05) + geom_point(data = filter(appearances_tib_fp, surname == "Wigley"), aes(r, 1), colour = "blue")
+
+ggarrange(timeline1, timeline2)
+
 
 top4 <- speech_counts %>% head(4) %>% pull(surname)
 top4_networks <- map(top4, ~ss_edge_plot(tidygraph, ., top4, coords))
@@ -393,6 +418,7 @@ labTor_graph <- tidygraph %>%
 
 
 labTor_graph
+nodes <- labTor_graph %>% pull(name) %>% as.tibble() %>% mutate(id = row_number())
 nodes <- attr(V(labTor_graph), which = "names") %>% as.tibble() %>% mutate(id = row_number())
 nodes_d3 <- mutate(nodes, id = id - 1)
 
@@ -411,10 +437,22 @@ edges_num <- edges_num %>%
 edges_d3 <- mutate(edges_num, from = from - 1, to = to - 1)
 nodes_d3 %<>% left_join(pjoin, by = c("value" = "name"))
 edges_d3 %<>% add_column(edgecols)
+edge_colour_ids <- tibble(edgecols = unique(edgecols), colour = c("purple", "blue", "red"))
+edges_d3 %<>% left_join(edge_colour_ids)
 
-forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", 
-             NodeID = "value", Group = "party", linkColour = edgecols,
+ColourScale <- 'd3.scaleOrdinal()
+            .domain(["(Lab)", "(Con)", "(LD)", "(CB)", "(other)"])
+.range(["#FE9680", "#80C1FE", "grey", "grey"]);'
+
+forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", colourScale = JS(ColourScale),
+             NodeID = "value", Group = "party.x", linkColour = edges_d3$colour, linkWidth = 2,
              opacity = 1, fontSize = 16)
+
+# Somehow functionalise the selection of nodes and edges from original tidygraph
+# e.g. "now I want nodes that are tories, and edges to all other parties". 
+
+
+# https://stackoverflow.com/questions/35280218/r-networkd3-package-node-coloring-in-simplenetwork
 
 # implement in visnetwork ----
 # https://cran.r-project.org/web/packages/visNetwork/vignettes/Introduction-to-visNetwork.html
