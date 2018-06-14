@@ -439,13 +439,47 @@ nodes_d3 %<>% left_join(pjoin, by = c("value" = "name"))
 edges_d3 %<>% add_column(edgecols)
 edge_colour_ids <- tibble(edgecols = unique(edgecols), colour = c("purple", "blue", "red"))
 edges_d3 %<>% left_join(edge_colour_ids)
+edges_d3 %<>% left_join(pjoin, by = c("a" = "name")) %>% left_join(pjoin, by = c("b" = "name"))
 
 ColourScale <- 'd3.scaleOrdinal()
             .domain(["(Lab)", "(Con)", "(LD)", "(CB)", "(other)"])
 .range(["#FE9680", "#80C1FE", "grey", "grey"]);'
 
 forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", colourScale = JS(ColourScale),
-             NodeID = "value", Group = "party.x", linkColour = edges_d3$colour, linkWidth = 2,
+             NodeID = "value", Group = "party", linkColour = edges_d3$colour, linkWidth = 2,
+             opacity = 1, fontSize = 16)
+
+# make using NSE so can select any variable (party, gender, age etc...)
+select_nodes <- function(nodes, edges, party_sel) {
+  nodes_filtered <- nodes %>% filter(party %in% party_sel)
+  edges_filtered <- edges %>% filter(party.x %in% party_sel | party.y %in% party_sel)
+  forceNetwork(Links = edges_filtered, Nodes = nodes_filtered, Source = "from", Target = "to", 
+               NodeID = "value", Group = "party", linkWidth = 2,
+               opacity = 1, fontSize = 16)
+}
+
+p <- select_nodes(nodes_d3, edges_d3, "(Con)")
+nodes_filtered <- nodes_d3 %>% filter(party %in% party_sel)
+edges_filtered <- edges_d3 %>% filter(party.x %in% party_sel | party.y %in% party_sel)
+forceNetwork(Links = edges_filtered, Nodes = nodes_filtered, Source = "from", Target = "to", 
+             NodeID = "value", Group = "party", linkWidth = 2,
+             opacity = 1, fontSize = 16)
+p
+
+pure_party_edge_graph <- function(tidygraph, lords, clrs) {
+  tidygraph %>%
+    mutate(group_edge = ifelse(value.x %in% lords & value.y %in% lords, TRUE, FALSE)) %>%
+    activate(nodes) %>%
+    mutate(lord_group = ifelse(name %in% lords, TRUE, FALSE)) %>%
+    filter(lord_group)
+}
+g <-  pure_party_edge_graph(tidygraph, tory_lords, c("blue", "blue"))
+p <- g %>% as.igraph()
+pd3 <- igraph_to_networkD3(p, group = pull(g, party))
+
+pd3
+forceNetwork(Links = pd3$links, Nodes = pd3$nodes, Source = "source", Target = "target", 
+             NodeID = "name", Group = "group", linkWidth = 2,
              opacity = 1, fontSize = 16)
 
 # Somehow functionalise the selection of nodes and edges from original tidygraph
