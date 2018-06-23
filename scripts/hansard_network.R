@@ -1,25 +1,27 @@
-
-# call lords by surname for plotting purposes
-appearances_tib_fp
+# Create sequence tibble ----
 
 # Get all pairs of speakers and parties.
 # arrange pairs in alphabetical order to be counted.
 sequence_tib <- appearances_tib_fp %>% select(surname, party)
 sequence_tib %<>% mutate(name_shift = lead(surname), party_shift = lead(party))
-sequence_tib %<>% mutate(px = pmin(surname, name_shift), py = pmax(surname, name_shift))
+sequence_tib %<>% mutate(x = pmin(surname, name_shift), y = pmax(surname, name_shift)) %>% ungroup()
 
 # Every pair and how many times they appear
 paired_seq_tib <-  sequence_tib %>% 
-  group_by(px, py) %>%
-  summarise(weights = n()) %>% filter(!is.na(px))
+  group_by(x, y) %>%
+  summarise(weights = n()) %>% filter(!is.na(x)) %>% ungroup()
 
 paired_seq_tib %>% arrange(desc(weights)) # Most talkative pairs
 
-# The same but minus the chief whip
-paired_seq_noTaylor <- sequence_tib %>% filter(px != "Taylor", py != "Taylor")
+# Remove a speaker from the seq tib
+remove_node <- function(tib, node) {tib %<>% filter(x != node, y != node)}
+# e.g. remove Taylor, chief whip
+sq_tib_noTaylor <- remove_node(paired_seq_tib,"Taylor")
+sq_tib_noTaylor
 
-# Numerical features of the network
+# Numerical features of the network ----
 
+# Number of pairs and unique pairs
 paired_seq_tib %>% ungroup() %>% summarise(sum(weights))
 # 220 pairs
 
@@ -27,17 +29,17 @@ paired_seq_tib %>% ungroup() %>% summarise(nrow(.))
 # make 155 unique connections (310 speakers involved)
 
 # counts of connections
-c1 <- paired_seq_tib %>% ungroup() %>% select(px, weights)
-c2 <- paired_seq_tib %>% ungroup() %>% select(py, weights) %>% rename(px = py)
-total_connections <- c1 %>% bind_rows(c2) %>% group_by(px) %>% summarise(s = sum(weights))
+c1 <- paired_seq_tib %>% ungroup() %>% select(x, weights)
+c2 <- paired_seq_tib %>% ungroup() %>% select(y, weights) %>% rename(x = y)
+total_connections <- c1 %>% bind_rows(c2) %>% group_by(x) %>% summarise(s = sum(weights))
 
 # n unique connections
-c3 <- paired_seq_tib %>% count(px)
-c4 <- paired_seq_tib %>% count(py) %>% rename(px = py)
-unique_connections <- c3 %>% bind_rows(c4) %>% group_by(px) %>% summarise(su = sum(n))
+c3 <- paired_seq_tib %>% count(x)
+c4 <- paired_seq_tib %>% count(y) %>% rename(x = y)
+unique_connections <- c3 %>% bind_rows(c4) %>% group_by(x) %>% summarise(su = sum(n))
 
-total_connections %<>% left_join(unique_connections) %>% group_by(px) %>% mutate(sr = su/s) %>% arrange(sr)
-total_connections %<>% arrange(desc(su)) %>% left_join(party_id_tib, by = c("px" = "surname"))
+total_connections %<>% left_join(unique_connections) %>% group_by(x) %>% mutate(sr = su/s) %>% arrange(sr)
+total_connections %<>% arrange(desc(su)) %>% left_join(party_id_tib, by = c("x" = "surname"))
 
 # For speakers making more than 2 connections, which party has the highest unique:total ratio?
 total_connections %>% filter(s > 2) %>% ggplot(aes(sr, colour = party_f)) + geom_freqpoly(size = 1)
@@ -46,6 +48,7 @@ total_connections %>% filter(s > 2) %>% ggplot(aes(su/s))+ geom_histogram() + fa
 
 total_connections %<>% arrange(desc(sr)) %>% filter(s > 2) %>% add_gender()
 total_connections %>% group_by(gender) %>% summarise(median(sr))
+
 # do women make more unique connections than men?
 women_data <- total_connections %>% filter(gender == "female") %>% pull(sr)
 men_data <- total_connections %>% filter(gender == "male") %>% pull(sr)
@@ -55,8 +58,18 @@ t.test(women_data, men_data)
 # males just seem to have a subset of Lords who make repeated interactions more often, otherwise
 # the distributins are similar. From the frequency polygon, this is probably exclusively tory males.
 
-ggplot(total_connections, aes(fct_reorder(px, s), s)) + geom_col(aes(fill = sr), alpha = 0.8) + geom_col(aes(fct_reorder(px, s), su), fill = "chartreuse3", alpha = 0.9) + scale_fill_gradient(low = "orange", high = "blue") + theme_pubr() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# filled bar chart showing relationship between number of speeches and number of unique speeches
+ggplot(total_connections, aes(fct_reorder(x, s), s)) + geom_col(aes(fill = sr), alpha = 0.8) + geom_col(aes(fct_reorder(x, s), su), fill = "chartreuse3", alpha = 0.9) + scale_fill_gradient(low = "orange", high = "blue") + theme_pubr() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
+# Number of speeches made by each lord + stats
+speech_counts <- appearances_tib_fp %>% group_by(surname) %>% count() %>% arrange(desc(n)) 
+speech_counts %>% ggplot(aes(n)) + geom_histogram(bins = 12) + scale_x_continuous(breaks = 1:12)
+quantile(speech_counts$n, 0.9) 
+ecdf(speech_counts$n)(3)
+ecdf(speech_counts$n)(1)
+median(speech_counts$n)
+
+# What is the relationship between n. connections and n. words used.
 total_connections %<>% left_join(words_per_lord)
 words_per_lord_per_speech <- words_per_lord %>% left_join(speech_counts) %>% mutate(p = word_count/n)
 total_connections %>%
@@ -71,28 +84,13 @@ total_connections %>%
   ggplot(aes(sr, p)) + geom_point(aes(colour = gender), alpha = 0.5) + geom_smooth()
   
 
-(words_per_speech <- appearances_tib_fp %>% mutate(r = row_number()) %>% unnest_tokens(word, speeches) %>% 
-    group_by(r, name) %>% summarise(word_count = n()))
-
-# Count total number of words said by each lord
-(words_per_lord <- words_per_speech %>% group_by(name) %>% summarise(word_count = sum(word_count)) %>% filter(!is.na(name)))
-
-words_per_lord %<>% add_surname()
-
-speech_counts <- appearances_tib_fp %>% group_by(surname) %>% count() %>% arrange(desc(n)) 
-speech_counts %>% ggplot(aes(n)) + geom_histogram(bins = 12) + scale_x_continuous(breaks = 1:12)
-quantile(speech_counts$n, 0.9) 
-ecdf(speech_counts$n)(3)
-ecdf(speech_counts$n)(1)
-median(speech_counts$n)
-
 # Convert each pair to thier respective parties
 pjoin <- party_id_tib %>% select(-name, -party) %>% mutate(party = as.character(party_f)) %>% select(-party_f)
-paired_party_tib <- paired_seq_tib %>% ungroup() %>% left_join(pjoin, by = c('px' = 'surname')) %>% left_join(pjoin, by = c('py' = 'surname')) %>%
-  mutate(px = pmin(party.x, party.y), py = pmax(party.x, party.y)) 
+paired_party_tib <- paired_seq_tib %>% ungroup() %>% left_join(pjoin, by = c('x' = 'surname')) %>% left_join(pjoin, by = c('y' = 'surname')) %>%
+  mutate(x = pmin(party.x, party.y), y = pmax(party.x, party.y)) 
 
 # counts of pairs
-paired_party_tib %>% group_by(px, py) %>% summarise(total_interactions = sum(weights)) %>% arrange(desc(total_interactions))
+paired_party_tib %>% group_by(x, y) %>% summarise(total_interactions = sum(weights)) %>% arrange(desc(total_interactions))
 # remember it does not make sense to compare order here (for that look at name/name_shift)
 # because lords were sorted alphabetically first.
 
@@ -100,7 +98,7 @@ diffPartyInteractions <- paired_seq_tib %>%
   bind_cols(select(paired_party_tib, party.x, party.y)) %>%
   mutate(pdiff = party.x != party.y) 
   
-party_interactions <- tibble(name = c(diffPartyInteractions$px, diffPartyInteractions$py), diffParty = rep(diffPartyInteractions$pdiff,2)) %>%
+party_interactions <- tibble(name = c(diffPartyInteractions$x, diffPartyInteractions$y), diffParty = rep(diffPartyInteractions$pdiff,2)) %>%
   group_by(name) %>% summarise(n_same_party = sum(!diffParty), n_diff_party = sum(diffParty)) %>% arrange(desc(n_same_party))
 
 party_interactions %>% ggplot(aes(n_same_party, n_diff_party)) + geom_point()
@@ -111,31 +109,47 @@ WVPlots::ScatterHist(party_interactions, "n_same_party", "n_diff_party",
 
 # Visualise
 
-# First construct the graph
+# Construct the graph ----
 
-# EDGES
-# convert this into a vector where each pair follows consequetively
-edgy_lords <- list()
-l1 <- paired_seq_tib$px
-l2 <- paired_seq_tib$py
-for (i in 1:(length(l1))) {
-  edgy_lords[[i]] <- c(l1[i], l2[i])
+# Load tidygraph
+load_graph <- function(r = "all") {
+  
+  # edges
+  edges <- list()
+  l1 <- paired_seq_tib$x
+  l2 <- paired_seq_tib$y
+  for (i in 1:(length(l1))) {
+    edges[[i]] <- c(l1[i], l2[i])
+  }
+  edges %<>% unlist()
+  
+  # nodes
+  nodes <- appearances_tib_fp %>% pull(surname) 
+  
+  # graph
+  g <- graph( edges=edges, directed=F ) 
+  
+  # tidygraph
+  tidygraph <- as_tbl_graph(g)
+  
+  out <- list(tidygraph = tidygraph, graph = g, nodes = nodes, edges = edges)
+  
+  if (r == "all") {
+    return(out)
+  } else {
+    return(out[[r]])
+  }
 }
-edgy_lords %<>% unlist()
 
-# NODES
-# get speaker names as distinct nodes
-nodes <- appearances_tib_fp %>% pull(surname) 
+tidygraph <- load_graph("tidygraph")
+edges_vec <- load_graph("edges")
 
-# Make graph object
-g2 <- graph( edges=edgy_lords, directed=F ) 
+# node ID numbers
+(lord_edges <- edges_vec[!duplicated(edges_vec)] %>% as.tibble() %>% mutate(r = row_number()))
 
-
-tidygraph <- as_tbl_graph(g2)
-(lord_edges <- edgy_lords[!duplicated(edgy_lords)] %>% as.tibble() %>% mutate(r = row_number()))
-
+# node parties
 pjoin <- party_id_tib %>% select(-party, -name) %>% rename(party = party_f, name = surname)
-
+pjoin %<>% mutate(party = as.character(party)) %>% mutate(party = ifelse(party == "other", "(other)", party)) 
 # add some extra features to graph data
 tidygraph %<>% 
   activate(nodes) %>%
@@ -154,9 +168,15 @@ labour_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(Lab)") %>%
 libdem_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(LD)") %>% pull(name)
 cb_lords <-  tidygraph  %>% activate(nodes) %>% filter(party == "(CB)") %>% pull(name)
 
-tidygraph %<>% activate(edges) %>% mutate(weights = paired_seq_tib$weights)
+tidygraph %<>%
+  activate(edges) %>% 
+  mutate(weights = paired_seq_tib$weights) %>%
+  left_join(pjoin, by = c("value.x" = "name")) %>%
+  left_join(pjoin, by = c("value.y" = "name"))
 
-# Main centrality plot
+# saveRDS(object = tidygraph, file = "data/tidygraph.RDAT")
+
+# Main centrality plot ----
 tidygraph %>%
   mutate(top_edge = ifelse(value.x %in% topnames | value.y %in% topnames, 1, 0.2)) %>%
   ggraph(layout = 'lgl') + 
@@ -168,7 +188,48 @@ tidygraph %>%
   theme_graph() +
   theme(legend.position="none")
 
-# interactions of one party
+# interactions of one party ----
+
+single_party_edges <- function(g = tidygraph, party) {
+  g %<>% 
+    mutate(main_edge = ifelse(party.x %in% party | party.y %in% party, TRUE, FALSE)) %>%
+    filter(main_edge) 
+  
+  party_grp <- g %>% activate(nodes) %>% pull(party)  
+    
+  d3_g <- networkD3::igraph_to_networkD3(g, group = party_grp)
+  
+  parties <- tidygraph %>% activate(nodes) %>% pull(party) %>% unique() %>% as.character()
+  
+  parties_arranged <- c(parties[which(parties == party)], parties[which(parties != party)])
+  
+  parties_arranged %<>% str_replace("\\(", "\\\"(") %>% str_replace("\\)", ")\\\",") %>% str_c(collapse = "")
+  
+  ColourScale <- str_c('d3.scaleOrdinal()
+.domain([', parties_arranged, '])
+                       .range(["#FE9680", "grey", "grey", "grey", "grey"]);')
+  
+  # Create force directed network plot
+  networkD3::forceNetwork(Links = d3_g$links, Nodes = d3_g$nodes, 
+                          Source = 'source', Target = 'target', colourScale = JS(ColourScale),
+                          NodeID = 'name', Group = 'group', opacity = 1, fontSize = 16, bounded = T, radiusCalculation = 0.0)
+  
+}
+
+single_party_edges(party = "(Con)")
+single_party_edges(party = "(Lab)")
+single_party_edges(party = "(LD)")
+
+# newnetwork graph
+
+main_g <- tidygraph %>%
+  mutate(top_edge = ifelse(value.x %in% topnames | value.y %in% topnames, 1, 0.2)) %>%
+  igraph_to_networkD3()
+
+main_g_centrality <- tidygraph %>% activate(nodes) %>% pull(centrality)
+
+ 
+
 tidygraph %>%
   mutate(top_edge = ifelse(value.x %in% tory_lords | value.y %in% tory_lords, 1, 0.2)) %>%
   ggraph(layout = 'kk') + 
@@ -260,6 +321,29 @@ top4_networks <- map(top4, ~ss_edge_plot(tidygraph, ., top4, coords))
 ggpubr::ggarrange(top4_networks[[1]], top4_networks[[2]], top4_networks[[3]], top4_networks[[4]],
                   nrow = 2, ncol = 2)
 
+# steps out from a lord
+step_out <- function(speaker, steps) {
+  t1 <- tidygraph %>%
+    mutate(group_edge = ifelse(value.x %in% speaker | value.y %in% speaker, TRUE, FALSE)) %>%
+    activate(nodes) %>%
+    mutate(lord_group = ifelse(name %in% speaker, TRUE, FALSE)) 
+  
+  speaker_connections <- tidygraph %>% activate(edges) %>% filter(group_edge) %>% select(value.x, value.y) %>% E() %>% attr(which = "vnames") %>% str_split("\\|") %>% unlist() %>% unique()
+  tidygraph %>% 
+    mutate(speaker_cons = ifelse(name %in% speaker_connections, TRUE, FALSE)) 
+  
+  if (steps > 1) {
+    # step_out(t1, 1)
+    tidygraph %<>%
+      mutate(group_edge = ifelse(value.x %in% speaker | value.y %in% speaker, TRUE, FALSE)) %>%
+      activate(nodes) %>%
+      mutate(lord_group = ifelse(name %in% speaker, TRUE, FALSE)) 
+  }
+}
+
+
+  
+  
 
 # speakers not connected to top 10 most central nodes
 
@@ -358,11 +442,11 @@ pullm <- function(df, vars) {
 
 tory_connections <- tidygraph %>% filter(value.x %in% tory_lords |value.y %in% tory_lords) %>% pullm(c("value.x", "value.y"))
 
-tory_con_tib <- tibble(px = tory_connections[[1]], py = tory_connections[[2]])
+tory_con_tib <- tibble(x = tory_connections[[1]], y = tory_connections[[2]])
 
 torycons <- appearances_tib_fp %>%
   mutate(name_shift = lead(surname), party_shift = lead(party), next_speech = lead(speeches)) %>%
-  mutate(px = pmin(surname, name_shift), py = pmax(surname, name_shift))  %>%
+  mutate(x = pmin(surname, name_shift), y = pmax(surname, name_shift))  %>%
   semi_join(tory_con_tib)
 
 speech1 <- torycons$speeches[torycons$party != "(Con)"]
@@ -441,7 +525,7 @@ edge_colour_ids <- tibble(edgecols = unique(edgecols), colour = c("purple", "blu
 edges_d3 %<>% left_join(edge_colour_ids)
 edges_d3 %<>% left_join(pjoin, by = c("a" = "name")) %>% left_join(pjoin, by = c("b" = "name"))
 
-ColourScale <- 'd3.scaleOrdinal()
+ColourScale1 <- 'd3.scaleOrdinal()
             .domain(["(Lab)", "(Con)", "(LD)", "(CB)", "(other)"])
 .range(["#FE9680", "#80C1FE", "grey", "grey"]);'
 
@@ -473,15 +557,17 @@ pure_party_edge_graph <- function(tidygraph, lords, clrs) {
     mutate(lord_group = ifelse(name %in% lords, TRUE, FALSE)) %>%
     filter(lord_group)
 }
-g <-  pure_party_edge_graph(tidygraph, tory_lords, c("blue", "blue"))
+
+g <-  pure_party_edge_graph(tidygraph, labour_lords, c("blue", "blue"))
 p <- g %>% as.igraph()
 pd3 <- igraph_to_networkD3(p, group = pull(g, party))
 
 pd3
 forceNetwork(Links = pd3$links, Nodes = pd3$nodes, Source = "source", Target = "target", 
              NodeID = "name", Group = "group", linkWidth = 2,
-             opacity = 1, fontSize = 16)
+             opacity = 1, fontSize = 16, zoom = F)
 
+https://rmarkdown.rstudio.com/authoring_shiny.html
 # Somehow functionalise the selection of nodes and edges from original tidygraph
 # e.g. "now I want nodes that are tories, and edges to all other parties". 
 
