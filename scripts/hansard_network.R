@@ -529,7 +529,7 @@ ColourScale1 <- 'd3.scaleOrdinal()
             .domain(["(Lab)", "(Con)", "(LD)", "(CB)", "(other)"])
 .range(["#FE9680", "#80C1FE", "grey", "grey"]);'
 
-forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", colourScale = JS(ColourScale),
+forceNetwork(Links = edges_d3, Nodes = nodes_d3, Source = "from", Target = "to", colourScale = JS(ColourScale1),
              NodeID = "value", Group = "party", linkColour = edges_d3$colour, linkWidth = 2,
              opacity = 1, fontSize = 16)
 

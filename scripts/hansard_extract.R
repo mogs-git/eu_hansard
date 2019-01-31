@@ -5,12 +5,28 @@ pacman::p_load(tidyverse, stringr, forcats, purrr, magrittr, tidytext, reshape2,
 
 # Inputs: Hansard source text, source functions 
 eu <- read_file("data/European Union (Notification of Withdrawal) Bill 2017-03-01 (1).txt")
-source('scripts\\hansard_src.R')
+source('scripts/hansard_src.R')
 # Outputs: 
 # Appearances_tib: speeches in order with Lord, party, gender etc...
 # Full_speeches: concatenated speeches of each lord. 
 
 # extract ----
+
+# Find all the unique prefixes used as headers
+name_tib <- tibble(headers = unlist(str_extract_all(eu, "\r\n\r\n.*\r\n"))) %>%
+  mutate(possible_name = str_length(headers) < 150) %>%
+  filter(possible_name)
+
+name_tib %>% 
+  mutate(headers = str_sub(headers, start = 5, end = -3),
+    first_word = str_extract(headers, "[a-zA-Z]*\\W")) %>%
+  group_by(first_word) %>% 
+  nest() %>%
+  mutate(n_obs = map_int(data, nrow))
+
+# Now it is necessary to investigate manually for potential name prefixes.
+# Some (e.g. "Lord", "Baroness") are obvious and appear often, others such as "The Earl", "The Parliamentary" 
+# appear rarely and are harder to guess at. 
 
 # Analysis begins with extracting names in order from text.
 name_vec <- extract_names(eu)
@@ -39,9 +55,9 @@ full_speeches %<>% keep_main_parties()
 appearances_tib_f %<>% keep_main_parties()
 
 # save party data
-saveRDS(appearances_tib, "data//appearances.RDAT")
+saveRDS(appearances_tib, "data//appearances_2.RDAT")
 saveRDS(appearances_tib_f, "data//appearances_f.RDAT")
-saveRDS(full_speeches, "data//full_speeches.RDAT")
+saveRDS(full_speeches, "data//full_speeches_2.RDAT")
 
 # get df of 1:1 mapping speaker-party
 party_id_tib <- distinct(full_speeches, name, party)

@@ -7,5 +7,9 @@ data/
 notes/
 old/
 global_functions/
-
+drawings/
+other/
+writeup/
 eu_hansard.Rproj
+
+!notes/hansard_analysis_writeup.docx

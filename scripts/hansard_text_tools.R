@@ -11,7 +11,6 @@ list.append <- function(l, val) {
   l
 }
 
-
 test_speech <- appearances_tib_fp$speeches[[1]]
 
 # Phrase search -----------------------------------------------------------
@@ -100,7 +99,7 @@ wordInContext_sentence(str_to_lower(df$speeches), "eu")
 
 # POS tagging -------------------------------------------------------------
 
-pacman::P_load(NLP, openNLP, openNLPmodels.en)
+pacman::p_load(NLP, openNLP, openNLPmodels.en)
 
 # Function to annotate a specific text
 
@@ -165,6 +164,11 @@ pull_questions <- function(string) {
   # 
   sentence_matches <- str_extract_all(string, "\\.|\\:|\\?|\\!")[[1]]
   sentence_matches_start <- which(sentence_matches == "?") - 1
+  for (i in seq_along(sentence_matches_start)) {
+    if (sentence_matches_start[[i]] == 0) {
+      sentence_matches_start[[i]] <- sentence_matches_start[[i]] + 1
+    }
+  }
   sentence_matches_end <- which(sentence_matches == "?")
   qsentence_positions <- str_locate_all(string, "\\.|\\:|\\?")[[1]]
   question_sentence_full <- str_sub(string, qsentence_positions[sentence_matches_start], qsentence_positions[sentence_matches_end])
@@ -172,6 +176,26 @@ pull_questions <- function(string) {
   first_qword <- all_qwords %>% map(~`[[`(., 1))
   return(tibble(first_qword, all_qwords, question_sentence_full))
 }
+
+# pull_questions <- function(string) {
+#   # pull the questions asked in a string, and the question word used.
+#   qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\Wdoes|\\?)"
+#   # initial_matches <- str_extract_all(string, qwords)[[1]]
+#   # initial_match_indexes_start <- which(initial_matches == "?") - 1
+#   # initial_match_indexes_end <- which(initial_matches == "?")
+#   # qword_positions <- str_locate_all(string, qwords)[[1]]
+#   # question_sentence <- str_sub(string, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
+#   # question_word <- initial_matches[initial_match_indexes_start]
+#   # 
+#   sentence_matches <- str_extract_all(string, "\\.|\\:|\\?|\\!")[[1]]
+#   sentence_matches_start <- which(sentence_matches == "?") - 1
+#   sentence_matches_end <- which(sentence_matches == "?")
+#   qsentence_positions <- str_locate_all(string, "\\.|\\:|\\?")[[1]]
+#   question_sentence_full <- str_sub(string, qsentence_positions[sentence_matches_start], qsentence_positions[sentence_matches_end])
+#   all_qwords <- str_extract_all(str_to_lower(question_sentence_full), qwords)
+#   first_qword <- all_qwords %>% map(~`[[`(., 1))
+#   return(tibble(first_qword, all_qwords, question_sentence_full))
+# }
 
 # Pull questions
 pull_questions(test_speech) %>% View()
@@ -320,3 +344,55 @@ headley_score %>% arrange(desc(sent_score)) %>% head()
 hayter_score %>% arrange(desc(sent_score)) %>% head()
 sents_headley[18]
 sents_hayter[8]
+
+
+# lexrank: representative sentences ---------------------------------------
+
+library("lexRankr")
+
+speech_sentences <- appearances_tib_fp %>% 
+  mutate(speech_id = row_number()) %>%
+  unnest_sentences(sentences, speeches)
+
+pt <- speech_sentences %>%
+  filter(speech_id == 86) %>%
+  pull(sentences)
+
+top_3 = lexRankr::lexRank(pt,
+                          #only 1 article; repeat same docid for all of input vector
+                          docId = rep(1, length(pt)),
+                          #return 3 sentences to mimick /u/autotldr's output
+                          n = 3,
+                          continuous = TRUE)
+
+#reorder the top 3 sentences to be in order of appearance in article
+order_of_appearance = order(as.integer(gsub("_","",top_3$sentenceId)))
+#extract sentences in order of appearance
+ordered_top_3 = top_3[order_of_appearance, "sentence"]
+
+out <- speech_sentences %>%
+  filter(speech_id %in% 1:10) %>% 
+  group_by(speech_id) %>%
+  mutate(n = n()) %>% 
+  ungroup() %>%
+  filter(n > 5) %>%
+  split(.$speech_id) %>% 
+  map(~bind_lexrank(., sentences, speech_id, level="sentences")) 
+
+out %>% 
+  reduce(bind_rows) %>%
+  group_by(speech_id) %>%
+  top_n(1, lexrank)
+  arrange(speech_id, desc(lexrank)) %>% head()
+
+
+
+# counting statistics -----------------------------------------------------
+
+trigrams <- df %>%
+    unnest_tokens(trigram, speeches, token = "ngrams", n = 3)
+
+number_words <- c("ten?s", "dozen?s", "hundred?s", "thousand?s", "million?s", "billion?s")  
+  
+trigrams %>%
+  mutate(stat = ifelse(str_detect(trigram, "[0-9]([^a-z]|$)"), T, F)) %>% filter(stat) %>% View()

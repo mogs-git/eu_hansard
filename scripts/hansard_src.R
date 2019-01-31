@@ -3,7 +3,7 @@
 # Extract ----
 
 # All the times a name appears in order of appearance
-extract_names <- function(text, prefix_string = "\r\n\r\n((Lord|The Advocate|The Countess|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)") {
+extract_names <- function(text, prefix_string = "\r\n\r\n((Lord|The Advocate|The Earl|The Countess|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)") {
   # prefix_string = "\r\n\r\n((Lord|The Advocate|The Countess|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)"
   names <- text %>%
     str_extract_all(prefix_string) %>%
@@ -18,7 +18,7 @@ extract_names <- function(text, prefix_string = "\r\n\r\n((Lord|The Advocate|The
 add_gender <- function(df = appearances_tib) {
   gender_vector <- vector("character", length(df$name))
   for (i in seq_along(df$name)) {
-    if (str_detect(df$name[i], "Lord|Viscount|Archbishop|Keen|Bridges")) {
+    if (str_detect(df$name[i], "Lord|Viscount|Archbishop|Keen|Bridges|Earl")) {
       gender_vector[i] <- "male"
     } else {
       gender_vector[i] <- "female"
@@ -31,7 +31,7 @@ add_gender <- function(df = appearances_tib) {
 # Extract the speech made by each lord in chronological order
 bind_speeches <- function(df = appearances_tib, text = eu, rm_shouts = F) {
   
-  names_search <- text %>% str_extract_all("\r\n\r\n((Lord|The Advocate|The Countess|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)") %>%
+  names_search <- text %>% str_extract_all("\r\n\r\n((Lord|The Advocate|The Countess|The Earl|The Archbishop|The Parliamentary|Viscount|Baroness|^Noble Lords$)(.+))(\r\n)") %>%
     unlist() 
   names_search_u <- unique(names_search)
   ns <- str_c(names_search_u, collapse = "|")
