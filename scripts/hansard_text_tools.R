@@ -154,7 +154,7 @@ annos_nested$annotations[[1]] %>% filter(!str_detect(word, "\\W")) %>%
 
 pull_questions <- function(string) {
   # pull the questions asked in a string, and the question word used.
-  qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\Wdoes|\\?)"
+  qwords <- "(\\Wdo|\\Wwhat|\\Wwhere|\\Wwho|\\Wwhy|\\Wwhen|\\Whow|\\Wif|\\Whas|\\Wwill|\\Wdoes|\\which)"#|\\?)"
   # initial_matches <- str_extract_all(string, qwords)[[1]]
   # initial_match_indexes_start <- which(initial_matches == "?") - 1
   # initial_match_indexes_end <- which(initial_matches == "?")
@@ -162,7 +162,17 @@ pull_questions <- function(string) {
   # question_sentence <- str_sub(string, qword_positions[initial_match_indexes_start], qword_positions[initial_match_indexes_end])
   # question_word <- initial_matches[initial_match_indexes_start]
   # 
+  first_punc_is_q <- FALSE
   sentence_matches <- str_extract_all(string, "\\.|\\:|\\?|\\!")[[1]]
+  if (length(sentence_matches) == 0) {
+    return(tibble(first_qword=NA, all_qwords=NA, question_sentence_full=NA))
+    break
+  }
+  if (sentence_matches[1] == "?") {
+    first_punc_is_q <- TRUE
+    sentence_matches <- c(".", "?", sentence_matches[2:length(sentence_matches)])
+    string <- str_c(" ", string)
+  }
   sentence_matches_start <- which(sentence_matches == "?") - 1
   for (i in seq_along(sentence_matches_start)) {
     if (sentence_matches_start[[i]] == 0) {
@@ -170,10 +180,39 @@ pull_questions <- function(string) {
     }
   }
   sentence_matches_end <- which(sentence_matches == "?")
+  
+  if (length(sentence_matches_end) == 0) {
+    return(tibble(first_qword=NA, all_qwords=NA, question_sentence_full=NA))
+    break
+  }
+  
   qsentence_positions <- str_locate_all(string, "\\.|\\:|\\?")[[1]]
+  if (first_punc_is_q) {
+    jam <- matrix(nrow = nrow(qsentence_positions)+1, ncol = 2)
+    for (i in 1:nrow(qsentence_positions)) {
+      jam[i+1,] <- qsentence_positions[i,]
+      }
+    jam[1,] <- 1
+    qsentence_positions <- jam
+  }
+
+  if (length(sentence_matches) == 1) {
+    qsentence_positions[1,1] <- 1
+    sentence_matches_start <- 1
+    sentence_matches_end <- 2
+  }
+  
   question_sentence_full <- str_sub(string, qsentence_positions[sentence_matches_start], qsentence_positions[sentence_matches_end])
   all_qwords <- str_extract_all(str_to_lower(question_sentence_full), qwords)
-  first_qword <- all_qwords %>% map(~`[[`(., 1))
+  first_qword <- list()
+  for (i in seq_along(all_qwords)) {
+    if (length(all_qwords[[i]]) != 0) {
+      first_qword[[i]] <- all_qwords[[i]][[1]]
+    } else {
+      first_qword[[i]] <- NA
+    }
+  }
+
   return(tibble(first_qword, all_qwords, question_sentence_full))
 }
 

@@ -466,3 +466,278 @@ lexRank(text)
 appearances_tib[1:5,] %>%
   mutate(central_sent = map(speeches, lexRank)) %>% View()
 
+# LDA ----
+
+library(topicmodels)
+
+titles <- c("Twenty Thousand Leagues under the Sea", "The War of the Worlds",
+            "Pride and Prejudice", "Great Expectations")
+
+library(gutenbergr)
+
+books <- gutenberg_works(title %in% titles) %>%
+  gutenberg_download(meta_fields = "title")
+
+# divide into documents, each representing one chapter
+by_chapter <- books %>%
+  group_by(title) %>%
+  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  filter(chapter > 0) %>%
+  unite(document, title, chapter)
+
+# split into words
+by_chapter_word <- by_chapter %>%
+  unnest_tokens(word, text)
+
+# find document-word counts
+word_counts <- by_chapter_word %>%
+  anti_join(stop_words) %>%
+  count(document, word, sort = TRUE) %>%
+  ungroup()
+
+my_stop_words <- c("lord", "lords", "noble", "baroness", "lordship", "minister", "amendment", "parliament", "eu", "uk", "government", "european", "union", "united", "kingdom")
+
+at_words <- appearances_tib %>%
+  unnest_tokens(word, speeches) %>%
+  anti_join(stop_words) %>%
+  filter(!word %in% my_stop_words, !str_detect(word, "[0-9]")) %>%
+  count(speech_id, word, sort = TRUE) %>%
+  ungroup() 
+
+speeches_dtm <- at_words %>%
+  cast_dtm(speech_id, word, n)
+
+speeches_dtm
+
+speeches_lda <- LDA(speeches_dtm, k = 4, control = list(seed = 1234))
+
+speeches_lda
+
+speech_topics <- tidy(speeches_lda, matrix = "beta")
+
+speech_topics
+
+
+top_terms <- speech_topics %>%
+  group_by(topic) %>%
+  top_n(8, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+View(top_terms)
+
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+speeches_gamma <- tidy(speeches_lda, matrix = "gamma") %>% rename(speech_id = document)
+
+speeches_gamma
+
+# Topic 1 = citizens rights; 2 = nuclear; 3 = womens/workers rights; 4 = devolved admins
+
+speeches_gamma %>% ggplot() + geom_point(aes(x = speech_id, y = gamma)) + facet_wrap(~topic)
+
+speeches_gamma %>%
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ggplot(aes(as.numeric(speech_id), 1)) + 
+  geom_point(color = "red") +
+  geom_text_repel(
+    aes(label=topic, size = gamma),
+    nudge_y      = 0.06,
+    direction    = "y",
+    angle        = 0,
+    vjust        = 0,
+    segment.size = 0.1
+  ) +
+  scale_size(range = c(3,5)) +
+  xlab("speech number") + 
+  ylim(c(0.975,1.075)) +
+  theme(legend.position="none")
+
+
+speeches_gamma %>%  
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ggplot(aes(speech_id, gamma)) + geom_point()
+
+speeches_gamma %>%  
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ggplot(aes(gamma)) + geom_histogram()
+
+sketchy_speeches <- speeches_gamma %>% 
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  filter(gamma < 0.95) %>%
+  ungroup() %>%
+  mutate(speech_id = as.numeric(speech_id))
+
+appearances_tib %>%
+  inner_join(sketchy_speeches) %>% 
+  `[`(2,) %>% pull(speeches)
+
+speeches_gamma %>%
+  filter(speech_id %in% sketchy_speeches$speech_id) %>%
+  ggplot(aes(topic, gamma)) + geom_col(aes(fill = as.factor(topic))) + facet_wrap(~speech_id)
+
+
+# Trigram ----
+
+tidy_tib %>%
+  filter(str_detect(word, "agree|disagree"))
+
+bigrams_separated %>%
+  filter(word1 == "agree", word2 != "to")
+
+fs_trigrams <- full_speeches %>% 
+  mutate(all_speeches = map_chr(all_speeches, as.vector)) %>%
+  unnest_tokens(trigram, all_speeches, token = "ngrams", n = 3)
+
+trigrams_separated <- fs_trigrams %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ")
+
+trigrams_separated
+
+trigrams_separated %>%
+  filter(word1 != "not", word2 == "agree", word3 != "to")
+
+trigrams_separated %>%
+  filter(word1 != "not", word2 == "disagree", word3 != "to")
+
+trigrams_separated %>%
+  filter(word1 %in% c("is", "are"), word2 == "right")
+
+bigrams_separated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = TRUE)
+
+bigrams_filtered %>%
+  filter(word1 == "amendment",
+         str_detect(word2, "^[0-9]")) %>%
+  unite(bigram, c(word1, word2), sep=" ") %>%
+  count(name, bigram)
+
+bigrams_filtered %>%
+  filter(word1 %in% c("lord","baroness","lady"),
+         word2 %!in% c("lord", "lady")) %>%
+  unite(bigram, c(word1, word2), sep=" ") %>%
+  count(name, bigram) 
+
+# questions
+
+appearances_tib <- appearances_tib %>%
+  mutate(speeches = map(speeches, ~str_to_lower(.)))
+
+for (i in 1: dim(appearances_tib)[1]) {
+  print(i)
+  appearances_tib[i,] %>% 
+    pull(speeches) %>% 
+    pull_questions()
+}
+appearances_tib[71,] %>% 
+  pull(speeches) %>% 
+  pull_questions()
+
+questions_tib <- appearances_tib %>% 
+  filter(!speech_id %in% small_speeches$speech_id) %>%
+  mutate(questions_dat = map(str_to_lower(speeches), pull_questions)) %>% 
+  select(-speeches) %>%
+  unnest() %>%
+  mutate(q_id = row_number())
+
+View(questions_tib)
+
+q_word_vec <- c("do","what","where","who","why","when","how","if","has","will","does")
+
+stop_words_amended <- stop_words %>% filter(!word %in% q_word_vec)
+
+q_words <- questions_tib %>%
+  mutate(q_id = row_number()) %>%
+  unnest_tokens(word, question_sentence_full) %>%
+  anti_join(stop_words_amended) %>%
+  #filter(!word %in% my_stop_words, !str_detect(word, "[0-9]")) %>%
+  count(q_id, word, sort = TRUE) %>%
+  ungroup() 
+
+# OR, remove all stop words, and model according to first Q word i marked
+
+q_words <- questions_tib %>%
+  mutate(q_id = row_number()) %>%
+  unnest_tokens(word, question_sentence_full) %>%
+  anti_join(stop_words) %>%
+  filter(!word %in% my_stop_words, !str_detect(word, "[0-9]")) %>%
+  count(q_id, word, sort = TRUE) %>%
+  ungroup() 
+
+q_dtm <- q_words %>%
+  cast_dtm(q_id, word, n)
+
+q_dtm
+
+q_lda <- LDA(q_dtm, k = 5, control = list(seed = 1234))
+
+q_lda
+
+q_topics <- tidy(q_lda, matrix = "beta")
+
+q_topics
+
+
+top_q_terms <- q_topics %>%
+  group_by(topic) %>%
+  top_n(8, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+
+top_q_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+speeches_gamma <- tidy(q_lda, matrix = "gamma") %>% rename(q_id = document)
+
+speeches_gamma 
+
+max_gammas <- speeches_gamma %>%
+  group_by(q_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ungroup() %>%
+  mutate(q_id = as.numeric(q_id))
+
+questions_tib %>%
+  inner_join(max_gammas) %>%
+  mutate(first_qword = unlist(first_qword),
+         first_qword = str_extract(first_qword, "[a-z]+")) %>%
+  group_by(first_qword) %>%
+  count(topic) %>%
+  ggplot(aes(first_qword, n)) + geom_col() + facet_wrap(~topic) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+qs_anno <- questions_tib %>%
+  mutate(tagged_sents = map(question_sentence_full, ~anno(., ".*"))) %>%
+  select(-first_qword, all_qwords) %>%
+  filter(!is.na(question_sentence_full)) 
+
+qs_anno[1,]$tagged_sents
+
+# FIx this
+
+qs_anno %<>% 
+  mutate(nsents = map(tagged_sents, nrow), q_ids = map2(q_id, nsents, rep))
+
+tagged_qs <- reduce(qs_anno$tagged_sents, bind_rows) %>% add_column(q_id = unlist(qs_anno$q_ids)) 
+
+questions_tib %>% View() 
+
+tagged_qs %>%
+  filter(str_detect(tags, "N.+")) %>%
+  View()
