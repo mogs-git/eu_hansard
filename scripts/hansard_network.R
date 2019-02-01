@@ -33,6 +33,8 @@ c1 <- paired_seq_tib %>% ungroup() %>% select(x, weights)
 c2 <- paired_seq_tib %>% ungroup() %>% select(y, weights) %>% rename(x = y)
 total_connections <- c1 %>% bind_rows(c2) %>% group_by(x) %>% summarise(s = sum(weights))
 
+party_id_tib <- appearances_tib %>% distinct(surname, party_f)
+
 # n unique connections
 c3 <- paired_seq_tib %>% count(x)
 c4 <- paired_seq_tib %>% count(y) %>% rename(x = y)
@@ -124,7 +126,7 @@ load_graph <- function(r = "all") {
   edges %<>% unlist()
   
   # nodes
-  nodes <- appearances_tib_fp %>% pull(surname) 
+  nodes <- appearances_tib %>% pull(surname) 
   
   # graph
   g <- graph( edges=edges, directed=F ) 
@@ -148,7 +150,7 @@ edges_vec <- load_graph("edges")
 (lord_edges <- edges_vec[!duplicated(edges_vec)] %>% as.tibble() %>% mutate(r = row_number()))
 
 # node parties
-pjoin <- party_id_tib %>% select(-party, -name) %>% rename(party = party_f, name = surname)
+pjoin <- party_id_tib %>% rename(party = party_f, name = surname)
 pjoin %<>% mutate(party = as.character(party)) %>% mutate(party = ifelse(party == "other", "(other)", party)) 
 # add some extra features to graph data
 tidygraph %<>% 
@@ -156,7 +158,8 @@ tidygraph %<>%
   mutate(centrality = centrality_authority()) %>% 
   mutate(top = centrality > sort(centrality, decreasing = T)[11]) %>%
   left_join(pjoin) %>%
-  mutate(party = as.factor(party)) %>%
+  mutate(party = as.factor(party),
+         party = fct_relevel(party, c("(Con)", "(CB)", "(LD)", "(Lab)", "(other)"))) %>%
   activate(edges) %>%
   left_join(lord_edges, by = c('from' = 'r')) %>%
   left_join(lord_edges, by = c('to' = 'r')) 

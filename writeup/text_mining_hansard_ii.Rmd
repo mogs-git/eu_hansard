@@ -1,0 +1,130 @@
+---
+title: "Brexit: A Textual Analysis II"
+output: html_notebook
+---
+
+```{r}
+pacman::p_load(tidyverse, magrittr, tidytext) # igraph, ggraph, tidygraph, grid, gridExtra, ggpubr, networkD3)
+
+full_speeches <- readRDS("..//data//full_speeches_2.RDAT")
+appearances_tib <- readRDS("..//data//appearances_2.RDAT")
+
+full_speeches$all_speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
+appearances_tib$speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
+
+appearances_tib %<>% mutate(speech_id = row_number())
+
+```
+
+In this article we will jump around between different methods for carrying out exploratory data analysis of a Hansard. I will mainly provide an overview, and hint at what *can* be done. As we shall see, Hansards are really ripe for studying and the amount of information we can find multiplies with each new technique we look at. Last time [LINK] we counted words and calculated the TF-IDF. But why just split a text up into single words? We could count any multiple of words. Let's take pairs of words (which those in the know call "bigrams"). 
+
+
+```{r}
+
+fs_bigrams <- appearances_tib %>% 
+  mutate(speeches = map_chr(speeches, as.vector)) %>%
+  unnest_tokens(bigram, speeches, token = "ngrams", n = 2)
+
+bigrams_separated <- fs_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_counts
+```
+
+These are just the raw counts of pairs of words used most across all speeches so you get the idea. 
+
+We drop every pair of words that appears less than five times in the whole text. Then put each remaining word on a graph, and connect lines between the ones that occur together in pairs. The strength of the line tells us how often the pair of words were used. An algorithm sorts out the points so that connected nets of words are plotted close to one another and not overlapping with other nets. 
+
+```{r, fig.width=10, fig.height=10}
+library(igraph)
+bigram_graph <- bigram_counts %>%
+  filter(n > 5) %>%
+  graph_from_data_frame()
+
+library(ggraph)
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = log(n)), show.legend=F) +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  scale_edge_alpha(range = c(0.5,1)) +
+  theme_void()
+```
+
+
+There is a lot of cool stuff going on in this graph. We can see how by pairing up words, they arrange themselves into families of topics. There are personal declarative words used to describe other MPs. There are buzzwords/phrases (cliff edge, bargaining chips). There are words related to the underlying framework of Hansard debates (amendments and clauses/subsections). There are different words associated with different topics (industries, human rights). 
+
+From glancing at this graph, we can learn immediately the amendments discussed, industries that got mentioned and other issues that were discussed.  
+
+This might help guide further exploration: Here are some examples of what we might now look for,
+
+### Which speakers mentioned womens rights
+
+```{r}
+bigrams_filtered %>% filter(str_detect(word1, "women"))
+```
+
+### Which Lords mentioned other Lords most often
+
+```{r}
+appearances_tib %>% 
+  mutate(speeches = map_chr(speeches, as.vector)) %>%
+  unnest_tokens(bigram, speeches, token = "ngrams", n = 2, to_lower = F) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(word1 %in% c("Lord","Baroness","Lady", "Viscount"),
+         !word2 %in% c("Lord", "Lady")) %>%
+  unite(bigram, c(word1, word2), sep=" ") %>%
+  count(name, bigram) %>%
+  filter(str_detect(bigram, "[A-Za-z] [A-Z][a-z]*")) %>%
+  group_by(name) %>% summarise(total_times_others_mentioned = sum(n)) %>% arrange(desc(total_times_others_mentioned))
+```
+
+Perhaps we want to see more about how people speak about amendments. We can create a function which picks out sentences where our word of interest was used.  
+```{r}
+wordInContext_sentence <- function(txt, word) {
+  # lower case full string vector (txt) and search term (word).
+  txt %>% str_extract_all(str_c("([^\\.\\?\\!]*\\s)", word, "(\\s|,|:|;)[^\\.\\?\\!]*"))
+}
+
+wordInContext_sentence(str_to_lower(appearances_tib$speeches), "amendment")
+appearances_tib %>%
+  mutate(sents_of_interest = map(speeches, ~unlist(wordInContext_sentence(str_to_lower(.), "amendment")))) %>%
+  select(name, speech_id, sents_of_interest) %>%
+  unnest() 
+```
+
+
+#### Expanding our horizons
+
+We are beginning to see how simply tools for analysis might reveal new things, if we use them creatively. One feature of the text particularly important to a debate or discussion is the use of questions. The questions asked in a Hansard tell a story. Rhetorical questions often highlight or emphasise salient points of an argument. Others are used to test another Lords argument. Some are sincere searches for answers. Others are used to probe an issue and give pause for thought, as put by Baroness Hamwee "I leave these questions hanging." (Column 837). 
+
+Firstly, we can count the number of questions asked by each Lord, and in regard to certain topics. We can a
+
+NEW: Maybe we can calculate number of nouns/adjs/verbs used etc... then cluster documents based on these values or euclidian distance + heirarchical clustering. 
+
+
+```{r}
+
+
+```
+
+#### 
+
+```{r}
+
+```
+### Conclusions
+
+Perhaps none of these techniques are so advanced or exciting. Perhaps even none of my analysis is particularly exciting either. All I'm trying to illustrate here is the *potential* for this kind of appraoch to be used in political research and beyond. Indeed, such tools may one day form a core part of a poltiical transparency and accountability. The [house of commons library](https://commonslibrary.parliament.uk/about-us/) publishes research by independent experts who also provide impartial briefings to MPs on issues. This is actually really great. But I think it is only one part of transparency required for a proper functioning democracy. There is no substitute from giving people the power to dig into the data themselves, and often in such analysis the end product is nice but how one got there is obscured. As such, open source tools such as those built in R I think really have the power to change how people participate in politics in a more intimate sense. You cannot get closer to the reality of parliamentary opinion than the Hansards themselves. Tools to navigate and analyse them in more detail, by more different people 
