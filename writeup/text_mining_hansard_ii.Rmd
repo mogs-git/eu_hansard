@@ -390,13 +390,39 @@ speeches_gamma %>%
   theme_bw()
 ```
 
-#### As a final aside
-
-
-
-#### Expanding our horizons
+### Questions that count
 
 We are beginning to see how simply tools for analysis might reveal new things, if we use them creatively. One feature of the text particularly important to a debate or discussion is the use of questions. The questions asked in a Hansard tell a story. Rhetorical questions often highlight or emphasise salient points of an argument. Others are used to test another Lords argument. Some are sincere searches for answers. Others are used to probe an issue and give pause for thought, as put by Baroness Hamwee "I leave these questions hanging." (Column 837). 
+
+
+```{r}
+topic_id <- speeches_gamma %>%  
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ungroup() %>%
+  mutate(speech_id = as.numeric(speech_id))
+
+questions_tib <- appearances_tib %>% 
+  filter(!speech_id %in% small_speeches$speech_id) %>%
+  mutate(questions_dat = map(str_to_lower(speeches), pull_questions)) %>% 
+  select(-speeches) %>%
+  unnest() %>%
+  mutate(q_id = row_number())
+
+lranked <- lexRank(questions_tib$question_sentence_full, n = 5)
+
+questions_tib %<>% 
+  left_join(topic_id) %>%
+  split(.$topic) 
+
+lexranked_qs <- map(questions_tib, ~lexRank(.$question_sentence_full, n = 3, threshold = 0.1))
+
+lexranked_qs <- reduce(lexranked_qs, bind_rows) %>% add_column(topic = c(1,1,1,2,2,2,3,3,3,3,4,4,4,4,4))
+
+lexranked_qs %>% select(-docId, -sentenceId)
+```
+
+
 
 Firstly, we can count the number of questions asked by each Lord, and in regard to certain topics. We can a
 
