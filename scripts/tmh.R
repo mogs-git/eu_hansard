@@ -1,6 +1,6 @@
 pacman::p_load(tidyverse, magrittr, tidytext) # igraph, ggraph, tidygraph, grid, gridExtra, ggpubr, networkD3)
 
-full_speeches <- readRDS("data//full_speeches.RDAT")
+full_speeches <- readRDS("data//full_speeches_2.RDAT")
 appearances_tib <- readRDS("data//appearances_2.RDAT")
 
 full_speeches$all_speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
@@ -318,6 +318,8 @@ bigram_counts
 bigrams_united <- bigrams_filtered %>%
   unite(bigram, word1, word2, sep = " ")
 
+
+
 bigrams_filtered %>%
   filter(word1 == "amendment",
          str_detect(word2, "^[0-9]")) %>%
@@ -334,6 +336,91 @@ bigram_tf_idf <- bigrams_united %>%
   count(name, bigram) %>%
   bind_tf_idf(bigram, name, n) %>%
   arrange(desc(tf_idf))
+
+
+top_speaker_bigrams <- bigram_tf_idf %>% 
+  filter(!str_detect(bigram, "noble|lord")) %>%
+  filter(n > 1) %>%
+  group_by(name) %>%
+  top_n(1, bigram) %>%
+  ungroup()
+
+gender_id <- full_speeches %>%
+  distinct(name, gender)
+
+
+gender_tibs <- top_speaker_bigrams %>%
+  left_join(gender_id) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  select(-name) %>% 
+  split(.$gender) %>%
+  map(graph_from_data_frame)
+
+bg_graph <- function(graph) {
+  graph %>% 
+    ggraph(layout = "fr") +
+    geom_edge_link() +
+    geom_node_point() +
+    geom_edge_loop() +
+    geom_node_text(aes(label = name), vjust = 1, hjust = 1) 
+} 
+
+
+ggpubr::ggarrange(bg_graph(gender_tibs$female), bg_graph(gender_tibs$male))
+
+# or with counts on total 
+
+gender_counts <- bigrams_filtered %>% 
+  count(word1, word2, gender, sort = TRUE) %>%
+  group_by(gender) %>%
+  mutate(tot = sum(n), p = n/tot) %>%
+  unite(bigram, word1, word2, sep = " ") %>%
+  filter(!str_detect(bigram, "noble|lord|[0-9]")) 
+   
+gender_counts %>% group_by(gender) %>%
+  top_n(10) %>% arrange(gender) %>% View()
+
+gender_counts %>%
+  filter(n > 5) %>%
+  select(bigram, gender, p) %>%
+  spread(gender, p) %>%
+  mutate(log_ratio = log2(female / male)) %>%
+  filter(!is.na(log_ratio)) 
+
+gender_bigrams <- bigram_tf_idf %>%
+  filter(!str_detect(bigram, "noble|lord|[0-9]")) %>%
+  filter(n > 1) %>%
+  left_join(gender_id) %>%
+  ungroup() %>%
+  select(gender, bigram, tf_idf) %>%
+  group_by(bigram, gender) %>%
+  mutate(max_tfidf = max(tf_idf)) %>%
+  filter(tf_idf == max_tfidf) %>%
+  mutate(r = row_number()) %>%
+  filter(r == 1) %>%
+  select(-r, -max_tfidf) %>%
+  spread(gender, tf_idf) %>%
+  ungroup()
+
+gender_bigrams %<>%
+  mutate(log_ratio = log2(female / male)) %>%
+  filter(!is.na(log_ratio)) 
+
+topntail_gbigrams <- bind_rows(top_n(gender_bigrams, 10), top_n(gender_bigrams, -10))
+
+topntail_gbigrams %>%
+  ggplot(aes(fct_reorder(bigram, log_ratio), log_ratio)) +
+  geom_col() +
+  coord_flip()
+
+top_speaker_bigrams %>%
+  left_join(gender_id) %>%
+  ungroup() %>%
+  select(gender, bigram, tf_idf) %>%
+  group_by(bigram, gender) %>%
+  mutate(max_tfidf = max(tf_idf)) %>%
+  filter(tf_idf == max_tfidf) %>%
+  spread(gender, tf_idf)
 
 bigrams_separated %>%
   filter(word1 == "not") %>%
@@ -367,7 +454,7 @@ count_bigrams <- function(dataset) {
     count(word1, word2, sort = TRUE)
 }
 
-visualize_bigrams <- function(bigrams) {
+visualise_bigrams <- function(bigrams) {
   set.seed(2016)
   a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
   
@@ -499,6 +586,7 @@ word_counts <- by_chapter_word %>%
 my_stop_words <- c("lord", "lords", "noble", "baroness", "lordship", "minister", "amendment", "parliament", "eu", "uk", "government", "european", "union", "united", "kingdom")
 
 at_words <- appearances_tib %>%
+  anti_join(small_speeches) %>%
   unnest_tokens(word, speeches) %>%
   anti_join(stop_words) %>%
   filter(!word %in% my_stop_words, !str_detect(word, "[0-9]")) %>%
@@ -541,6 +629,8 @@ speeches_gamma
 # Topic 1 = citizens rights; 2 = nuclear; 3 = womens/workers rights; 4 = devolved admins
 
 speeches_gamma %>% ggplot() + geom_point(aes(x = speech_id, y = gamma)) + facet_wrap(~topic)
+
+library(ggrepel)
 
 speeches_gamma %>%
   group_by(speech_id) %>%
@@ -585,6 +675,37 @@ appearances_tib %>%
 speeches_gamma %>%
   filter(speech_id %in% sketchy_speeches$speech_id) %>%
   ggplot(aes(topic, gamma)) + geom_col(aes(fill = as.factor(topic))) + facet_wrap(~speech_id)
+
+# Just from eyeballing this, we can see something pretty cool- none of our skethcy speeches
+# seem to be shared between "green and blue" or topic 2 and 3. These are the topics for euratom and rights/
+
+appearances_tib %>%
+  filter(speech_id == 231) %>%
+  pull(speeches)
+
+party_id <- distinct(appearances_tib, speech_id, party)
+
+speeches_gamma %>%  
+  group_by(speech_id) %>%
+  filter(gamma == max(gamma)) %>%
+  ungroup() %>%
+  mutate(speech_id = as.numeric(speech_id)) %>%
+  left_join(party_id) %>%
+  count(topic, party) %>%
+  group_by(party) %>%
+  mutate(n_party = sum(n), p = n/n_party) %>%
+  filter(party %in% c("(CB)", "(Con)", "(Lab)", "(LD)")) %>%
+  ggplot(aes(topic, p)) + geom_col() + facet_wrap(~party)
+
+speeches_gamma %>%
+  ggplot(aes(as.numeric(speech_id), gamma, colour = as.factor(topic))) + geom_point() + geom_smooth() + theme_bw()
+
+argh <- speeches_gamma %>%
+  filter(speech_id %in% sketchy_speeches$speech_id) %>% group_by(speech_id) %>% top_n(2) %>% arrange(desc(speech_id)) %>% group_by(speech_id) %>% nest() %>% mutate(topics = map(data, ~c(pull(., topic)))) %>%
+  select(-data) 
+
+tibble(t1 = unlist(map(argh$topics, `[`(1))), t2 = unlist(map(argh$topics, `[`(2)))) %>%
+  count(t1, t2)
 
 
 # Trigram ----
@@ -741,3 +862,93 @@ questions_tib %>% View()
 tagged_qs %>%
   filter(str_detect(tags, "N.+")) %>%
   View()
+
+
+# Exploring amendments ----
+
+amendment_tib <- appearances_tib %>%
+  mutate(amendment = str_extract(str_to_lower(speeches), "amendment [0-9][a-z0-9]+\\W"),
+         amendment = str_sub(amendment, end = -2)) %>%
+  mutate(explicit_mention = !is.na(amendment))
+
+## The above didn't take into account that more than one amednment might be mentioned in a single speech,
+# fixed here:
+
+amendment_tib <- appearances_tib %>%
+  mutate(amendment = str_extract_all(str_to_lower(speeches), "amendment [0-9][a-z0-9]+\\W")) #%>%
+  unnest()
+         amendment = str_sub(amendment, end = -2)) %>%
+  mutate(explicit_mention = !is.na(amendment))
+
+
+# populate amendments list with last mentioned amendment (assume they are talking on this topic still)
+
+for (i in seq_along(amendment_tib$amendment)) {
+  if (!is.na(amendment_tib$amendment[i])) {
+    current <- amendment_tib$amendment[i]
+  }
+  if (is.na(amendment_tib$amendment[i])) {
+    amendment_tib$amendment[i] <- current
+  }
+}
+amendment_tib$amendment
+
+amendment_tib %>% View()
+
+# count explicit and implicit mentions of each amendment
+
+explicit_mentions <- amendment_tib %>%
+  filter(explicit_mention) %>%
+  count(amendment)
+
+implicit_mentions <- amendment_tib %>%
+  count(amendment)
+
+# sanity check
+implicit_mentions %>%
+  left_join(rename(explicit_mentions, n_explicit = n)) %>%
+  ggplot(aes(n_explicit, n)) + geom_point()
+
+# appears to be a correlation, so we will use implicit mentions
+
+amendment_tib %>%
+  count(party, amendment) %>%
+  ggplot(aes(party, n)) + geom_col() + facet_wrap(~amendment, scale = "free_y")
+
+# normalised
+
+amendment_tib %>%
+  count(party, amendment) %>%
+  group_by(amendment) %>%
+  mutate(total_mentions = sum(n)) %>%
+  filter(total_mentions > 5) %>%
+  group_by(party) %>%
+  mutate(tot = sum(n), p = n/tot) %>%
+  ggplot(aes(amendment, p)) + geom_col(aes(fill = n)) + facet_wrap(~party) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+amendment_tib %>%
+  count(party, amendment) %>%
+  group_by(amendment) %>%
+  mutate(total_mentions = sum(n)) %>%
+  filter(total_mentions > 5) %>%
+  group_by(party) %>%
+  mutate(tot = sum(n), p = n/tot) %>%
+  filter(party %in% c("(CB)", "(Con)", "(Lab)", "(LD)")) %>%
+  ggplot(aes(party, p)) + geom_col(aes(fill = amendment)) + scale_fill_brewer(type = "qual", palette = 2)
+
+
+# Of course, this doesn't tell us much about each parties sentiment towards that amendment.
+# In order to do that, we are going to try to do a targeted sentiment analysis.
+
+# pull out sentences containing the word "amendment"
+targeted_sent <- appearances_tib %>%
+  mutate(sents_of_interest = map(speeches, ~unlist(wordInContext_sentence(str_to_lower(.), "amendment")))) %>%
+  select(name, party, speech_id, sents_of_interest) %>% 
+  unnest() 
+
+targeted_sent %>% 
+  unnest_tokens(word, sents_of_interest)
+
+# https://www.parliament.uk/business/publications/business-papers/lords/lords-divisions/?fd=2017-03-01&td=2017-03-03&dd=2017-03-01&division=1
+
+
