@@ -28,7 +28,7 @@ appearances_tib %<>% mutate(speeches = map_chr(speeches, as.vector))
 
 ```
 
-In my previous article[link], I explored how by looking at simple numerical features of text from a Hansard (number of speeches, counts of different words) and applying text mining methods like calculating the TF-IDF can help shape our perspective when analysing one of these documents. Taking inspiration again from Julia Silge and David Robinson's brilliant book on (tidy text mining)[https://www.tidytextmining.com/], this time we will explore how more advanced analytical methods and more creative ways of extracting information from the text can help us find and understand the important details of a Hansard. 
+In my previous article[link], I explored how by looking at simple numerical features of text from a Hansard (number of speeches, counts of different words) and applying text mining methods like calculating the TF-IDF can help shape our perspective when analysing one of these documents. Taking inspiration again from Julia Silge and David Robinson's brilliant book on [tidy text mining](https://www.tidytextmining.com/), this time we will explore how more advanced analytical methods and more creative ways of extracting information from the text can help us find and understand the important details of a Hansard. 
 
 Last time, in order to analyse the text, we counted individuals words that are associated with categorical variables like the speaker, political party or speech number. But why just split the text up into individual words? We know that some words naturally appear in groups (Mr. Smith, United Kingdom, European Union), so we might want to count groups of words- collectively known as "n-grams". We are specifically going to count pairs of words, which are known to text-mining aficionados as "bigrams" (which I have a habit of reading as *big rams*, making big rams a big ram).  
 
@@ -99,26 +99,9 @@ There is a lot of cool stuff going on in this graph. We can see how by pairing u
 
 From glancing at this graph, we can learn immediately the amendments discussed, industries that got mentioned and other issues that were discussed.  
 
-This might help guide further exploration: Here are some examples of what we might now look for,
+This might help guide further exploration...
 
-### Which Lords mentioned other Lords most often
-
-```{r}
-appearances_tib %>% 
-  mutate(speeches = map_chr(speeches, as.vector)) %>%
-  unnest_tokens(bigram, speeches, token = "ngrams", n = 2, to_lower = F) %>%
-  separate(bigram, c("word1", "word2"), sep = " ") %>%
-  filter(!word1 %in% stop_words$word) %>%
-  filter(!word2 %in% stop_words$word) %>%
-  filter(word1 %in% c("Lord","Baroness","Lady", "Viscount", "Earl"),
-         !word2 %in% c("Lord", "Lady")) %>%
-  unite(bigram, c(word1, word2), sep=" ") %>%
-  count(name, bigram) %>%
-  filter(str_detect(bigram, "[A-Za-z] [A-Z][a-z]*")) %>%
-  group_by(name) %>% summarise(total_times_others_mentioned = sum(n)) %>% arrange(desc(total_times_others_mentioned))
-```
-
-### Getting context on amendments
+### Getting context on the Amendments
 
 Perhaps we want to see more about how people speak about amendments. We can create a function which picks out sentences where our word of interest was used.  
 ```{r}
@@ -126,12 +109,6 @@ wordInContext_sentence <- function(txt, word) {
   # lower case full string vector (txt) and search term (word).
   txt %>% str_extract_all(str_c("([^\\.\\?\\!]*\\s)", word, "(\\s|,|:|;)[^\\.\\?\\!]*"))
 }
-
-# wordInContext_sentence(str_to_lower(appearances_tib$speeches), "amendment")
-appearances_tib %>%
-  mutate(sents_of_interest = map(speeches, ~unlist(wordInContext_sentence(str_to_lower(.), "amendment")))) %>%
-  select(name, speech_id, sents_of_interest) %>%
-  unnest() 
 ```
 
 Now let's dig into this in more detail...
@@ -142,7 +119,7 @@ amendment_tib <- appearances_tib %>%
   select(-speeches) %>%
   mutate(explicit_mention = !is.na(amendment)) # mark speeches that mentioned amendments for later
 
-amendment_tib
+head(amendment_tib)
 ```
 Here we just have the same data as before, but with a column that tells us which amendments were mentioned in that speech. (Keen readers might have noticed I used str_extract() rather than str_extract_all(), for the time being we will just extract the first amendment mentioned in each speech to simplify later analysis). 
 
@@ -194,7 +171,7 @@ amendment_tib %>%
 ```
 
 This is a pretty crude analysis, but is a nice summary of the importance of each amendment as a whole and to each party. One thing we can't see here is whether speeches supported the amendment or spoke against it. 
-I had a go at this, again using simple, maybe crude but otherwise transparent methods strung together. This involved pulling out sentences that included the word "amendment" to remove noise, then using sentiment analysis as a proxy for support or opposition. I wasn't too happy with the result. Maybe this kind of classification is more appropriate for a machine learning approach. My code is displayed below:
+I had a go at this, again using simple, maybe crude but otherwise transparent methods strung together. This involved pulling out sentences that included the word "amendment" to remove noise, then using sentiment analysis as a proxy for support or opposition. I wasn't too happy with the result. Maybe this kind of classification is more appropriate for a supervised machine learning approach. My code is displayed below:
 
 ```{r message=F, warning=F, error=F}
 # Use a home-made function "words in context", to extract all the sentences from a speech containing a particular word. 
@@ -362,7 +339,7 @@ tibble(t1 = unlist(map(argh$topics, `[`(1))), t2 = unlist(map(argh$topics, `[`(2
 ```
 Our topic on devolved administrations is often confused with every other topic, and the same is true for the topic on citizens rights. 
 
-### Which topics where most important to each party?
+### Which topics were most important to each party?
 
 ```{r echo=F, warning=F, message=F}
 party_id <- distinct(appearances_tib, speech_id, party)
@@ -423,26 +400,14 @@ lexranked_qs %>% select(-docId, -sentenceId)
 ```
 
 
-
-Firstly, we can count the number of questions asked by each Lord, and in regard to certain topics. We can a
-
-NEW: Maybe we can calculate number of nouns/adjs/verbs used etc... then cluster documents based on these values or euclidian distance + heirarchical clustering. 
-
-
-```{r}
-
-
-```
-
-#### 
-
-```{r}
-
-```
 ### Discussion
 
-There's something to be said here for the general role of exploratory data analysis in political and social discourse and decision making. Sometimes, analyses can give the impression that a researcher didn't think to themselves "just because we can, doesn't mean that we should". Every tool is only as useful as the practitioner is skillful. A more abstract method used in the wrong situation only obscures. Obviously here, I have been trying to showcase how different tools might be used in the context of exploring a parliamentary debate through the lens of a data analysis problem without being too interested in the results. But I hope I have also communicated to some extent the challenges inherent in this process- particularly at the ends of meaningful implementation and interpretation. 
+In this article, I applied tidy text mining methods such as tokenisation into bigrams, sentiment analysis, topic modelling, and text summarisation to try and gain more insight into a Hansard debate. There are many things I've not included, notably supervised machine learning for text classification, and linguistic analysis like Part-Of-Speech tagging. Both of these methods could readily be integrated into this kind of analysis. 
 
-Such tools should one day form a core part of a political transparency and accountability. The [house of commons library](https://commonslibrary.parliament.uk/about-us/) publishes research by independent experts who also provide impartial briefings to MPs on issues. This is really great. But I think it is only one part of transparency required for a proper functioning democracy. There is no substitute from giving people the power to dig into the data themselves, and often in such analysis the end product is nice but how one got there is obscured. This [Yougov piece](https://yougov.co.uk/topics/politics/articles-reports/2019/01/29/16-groups-brexit) is a great example of what I mean. Super interesting ideas- but how did they get there? What were the limitations of their approach? Let us see the guts and grime, and reproduce the analysis for ourselves*. As such, open source tools like those built in R I think really have the power to change how people participate in politics in a more intimate sense. You cannot get closer to the reality of parliamentary opinion than the Hansards themselves. Tools to navigate and analyse them in more detail, by more different people 
+There's something to be said here for the general role of exploratory data analysis in political and social discourse and decision making. Sometimes, analyses can give the impression that a researcher didn't think to themselves "just because we can, doesn't mean that we should". Every tool is only as useful as the practitioner is skillful. A more abstract method used in the wrong situation only obscures. Obviously here, I have been trying to showcase how different tools might be used in the context of exploring a parliamentary debate. We have looked at it through the lens of a data analysis problem without being *too* concerned about the results. But I hope I have also communicated to some extent the challenges inherent in this process- particularly at the ends of meaningful implementation and interpretation. 
 
-* Note that if you dig through far enough you'll see that 1754 people were sampled.
+Such tools should one day form a core part of a political transparency and accountability. The [house of commons library](https://commonslibrary.parliament.uk/about-us/) publishes research by independent experts who also provide impartial briefings to MPs on issues. This is really great. Earlier in the article I also linked to the House of Lords [research briefings](https://researchbriefings.parliament.uk/). But I think this is only one part of transparency required for a proper functioning democracy. There is no substitute for giving people the power to dig into the data themselves. Often in such curated analysis the end product is nice but the analytical process is obscured. There are articles with really interesting ideas like this [YouGov piece](https://yougov.co.uk/topics/politics/articles-reports/2019/01/29/16-groups-brexit), but leave you to wonder how they got there. What were the limitations of their approach? Let us see the guts and grime, and make the data available in an accessible format so we can reproduce the analysis for ourselves. As such, open source tools like those built in R I think really have the power to change how people participate in politics in a more intimate sense. You cannot get closer to the reality of parliamentary opinion than the Hansards themselves.  
+
+
+
+

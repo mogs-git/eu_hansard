@@ -951,4 +951,20 @@ targeted_sent %>%
 
 # https://www.parliament.uk/business/publications/business-papers/lords/lords-divisions/?fd=2017-03-01&td=2017-03-03&dd=2017-03-01&division=1
 
+# NEW: Maybe we can calculate number of nouns/adjs/verbs used etc... then cluster documents based on 
+# these values or euclidian distance + heirarchical clustering. 
 
+#### Which Lords mentioned other Lords most often ----
+
+appearances_tib %>% 
+  mutate(speeches = map_chr(speeches, as.vector)) %>%
+  unnest_tokens(bigram, speeches, token = "ngrams", n = 2, to_lower = F) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(word1 %in% c("Lord","Baroness","Lady", "Viscount", "Earl"),
+         !word2 %in% c("Lord", "Lady")) %>%
+  unite(bigram, c(word1, word2), sep=" ") %>%
+  count(name, bigram) %>%
+  filter(str_detect(bigram, "[A-Za-z] [A-Z][a-z]*")) %>%
+  group_by(name) %>% summarise(total_times_others_mentioned = sum(n)) %>% arrange(desc(total_times_others_mentioned))
