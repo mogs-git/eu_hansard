@@ -18,14 +18,13 @@ Be sure to use the [glossary](#glossary) at the bottom of the page when you have
 ```{r load in the data, echo = FALSE, message=FALSE, warning=FALSE, error=F}
 pacman::p_load(tidyverse, magrittr, tidytext, stringr, ggpubr)
 
-full_speeches <- readRDS("..//data//full_speeches.RDAT") # a tibble of lords and all their speeches (concatenated together)
-appearances_tib <- readRDS("..//data//appearances.RDAT") # a tibble of all the speeches in the chronological order they were made
+full_speeches <- readRDS("..//data//full_speeches_2.RDAT") # a tibble of lords and all their speeches (concatenated together)
+appearances_tib <- readRDS("..//data//appearances_2.RDAT") # a tibble of all the speeches in the chronological order they were made
 party_id_tib <- readRDS("..//data//party_id_tib.RDAT") # a tibble containing each lords party and gender. 
 source("..//scripts/hansard_src.R")
 
-# Remove some escape characters/formatting from the text. 
-full_speeches$all_speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
-appearances_tib$speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
+# Global graphing stuff
+mycols <- c("dodgerblue3","chartreuse3", "goldenrod1", "firebrick2", "grey30")
 ```
 
 ## Counting things that matter

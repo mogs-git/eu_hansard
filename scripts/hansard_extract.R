@@ -54,6 +54,10 @@ appearances_tib %<>% keep_main_parties()
 full_speeches %<>% keep_main_parties()
 appearances_tib_f %<>% keep_main_parties()
 
+# Remove some escape characters/formatting from the text. 
+full_speeches$all_speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
+appearances_tib$speeches %<>% map(~str_replace_all(., "\\\r\\\n\\\r\\\n", " "))
+
 # save party data
 saveRDS(appearances_tib, "data//appearances_2.RDAT")
 saveRDS(appearances_tib_f, "data//appearances_f.RDAT")
