@@ -267,3 +267,28 @@ A Hansard is the official transcript of proceedings of both the House of Commons
 A peer is just a member of the House of Lords (like an MP in the House of Commons) [source](https://www.parliament.uk/site-information/glossary/peer/)
 
 [An even better Glossary](https://www.theyworkforyou.com/glossary/)
+
+```{r echo=FALSE}
+## Code for chi-sq test:
+
+# exp_speeches_csq <-  exp_speeches %>% select(party, expected_nspeeches)
+# chi_tib <- speeches_by_party %>%
+#   left_join(exp_speeches_csq) %>%
+#   mutate(chisq = ((n_speeches - expected_nspeeches)^2)/(expected_nspeeches))
+# 
+# sum(chi_tib$chisq)
+# 
+# dof = 7
+# 
+# # Number of speeches is dependent on party
+# # Number of speeches is independent of party
+# 
+# Chi-Squared = 24.27488
+# 
+# Degrees of Freedom = 7
+# 
+# p = 0.00101926
+# 
+# # https://www.mathsisfun.com/data/chi-square-test.html
+
+```
