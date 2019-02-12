@@ -24,11 +24,11 @@ appearances_tib %<>% mutate(speech_id = row_number())
 ```
 
 
-This article will explore how text mining can be used to gather data from Parliamentary transcripts (Hansards). I focus specifically on a Hansard from the House of Lords regarding the EU withdrawal bill which can be found <a href="https://hansard.parliament.uk/lords/2017-03-01/debates/EE9DF3A9-2E05-4568-8CF8-A61F11172391/EuropeanUnion(NotificationOfWithdrawal)Bill" target="_blank">here</a>. This will build on ideas from another article I wrote: if you haven't read the first part, find that [here](../../04/hansard-text-analysis-part-1/). I will again lean heavily on methods I learned from [Julia Silge](https://juliasilge.com/) and [David Robinson](http://varianceexplained.org/about/) in their book [Text mining with R](https://www.tidytextmining.com/) and the [tidytext](https://cran.r-project.org/web/packages/tidytext/vignettes/tidytext.html) package. Be sure to use the Parliament website <a href="https://www.parliament.uk/site-information/glossary/" target="_blank">glossary</a> for tricky phrases.
+This article will explore how text mining can be used to gather data from Parliamentary transcripts (Hansards) using the [R](https://www.r-project.org/about.html) programming language and [tidy data principles](https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html). I focus specifically on a Hansard from the House of Lords regarding the EU withdrawal bill which can be found <a href="https://hansard.parliament.uk/lords/2017-03-01/debates/EE9DF3A9-2E05-4568-8CF8-A61F11172391/EuropeanUnion(NotificationOfWithdrawal)Bill" target="_blank">here</a>. This will build on ideas from another article I wrote: if you haven't read the first part, find that [here](../../04/hansard-text-analysis-part-1/). I will again lean heavily on methods I learned from [Julia Silge](https://juliasilge.com/) and [David Robinson](http://varianceexplained.org/about/) in their book [Text mining with R](https://www.tidytextmining.com/) and the [tidytext](https://cran.r-project.org/web/packages/tidytext/vignettes/tidytext.html) package. Be sure to use the Parliament website <a href="https://www.parliament.uk/site-information/glossary/" target="_blank">glossary</a> for tricky phrases.
 
 What does text-mining analysis look like? Usually we have a set of related documents (e.g. news articles about different businesses) known as a *corpus*. Often, these articles don't come in a format immediately appropriate for analysis so will first have to be "cleaned" and "standardised", but we will ignore that for now. Every text mining analysis then seeks to convert features of the text into numerical values. This is just a fancy way of saying: first, we need to count things. 
 
-But what's our goal here? What information can we "mine" from the text that you can't get from just reading it? The first goal is summarisation. We can condense information down and extract the most important parts in a way that can be easily scaled. The second goal is clarification. When you read a debate, you have certain intuitions and feelings about what went on. "Those three spoke about similar things". "He was the most aggressive". We want to quantify these things, and by putting numbers on them make statements in a statistically rigorous, evidence-based way. We can make unbiased searches for every pattern in the text, even ones that people might miss after a few readings. The third goal for lots of text mining work is prediction. You have gathered information on what is there, and maybe you can use this again in the future to predict something in another text. This is a bit beyond the scope of this article, but an example might be using the data you have gathered from one set of speeches to predict the party of a speaker in a new speech.  
+But what's our goal here? What information can we "mine" from the text that you can't get from just reading it? The first goal is **summarisation**. We can condense information down and extract the most important parts in a way that can be easily scaled. The second goal is **clarification**. When you read a debate, you have certain intuitions and feelings about what went on. "Those three spoke about similar things". "He was the most aggressive". We want to quantify these things, and by putting numbers on them make statements in a statistically rigorous, evidence-based way. We can make unbiased searches for every pattern in the text, even ones that people might miss after a few readings. The third goal for lots of text mining work is **prediction**. You have gathered information on what is there, and maybe you can use this again in the future to predict something in another text. This is a bit beyond the scope of this article, but an example might be using the data you have gathered from one set of speeches to predict the party of a speaker in a new speech.  
 
 The approaches used here are useful for another simple reason: automation. Letting a program collect some of the available data for us is much faster and more accurate than doing things by hand.
 
@@ -50,19 +50,19 @@ at_nostop <- appearances_tib %>%
   count(speech_id, word, sort = TRUE) %>%
   ungroup()
 
-at_nostop <- at_nostop %>%
+at_nostop_sum <- at_nostop %>%
   group_by(speech_id) %>%
   summarise(total = sum(n)) %>%
   arrange(desc(total))
 
-at_ns_sum <- at_nostop %>%
+at_ns_sum <- at_nostop_sum %>%
   summarise(median_words = median(total),
             LQ = quantile(total, 0.25), 
             UQ = quantile(total, 0.75), 
             min = min(total),
             max = max(total))
 
-at_nostop %>%
+at_nostop_sum %>%
   ggplot(aes(total)) +
   geom_histogram() +
   geom_vline(data = at_ns_sum, aes(xintercept = median_words), colour = "red") + 
@@ -145,7 +145,7 @@ As we might expect, the more speeches you give, the more words you use in total.
 Let's pick out the peers who made five or more speeches, and look not just at the total number of words, but the number of words used in each of their speeches (to understand the spread).
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE, fig.cap="As above but with specific boxplots for each peer.", fig.width=10, fig.height=8}
-at_words %>%
+at_nostop %>%
   group_by(speech_id) %>%
   summarise(total = sum(n)) %>%
   left_join(distinct(appearances_tib, name, speech_id)) %>%
@@ -175,7 +175,8 @@ Boring definitions: Each text is composed of words. People who research [text mi
 # Counting #
 at_words %>%
   left_join(at_total) %>%
-  rename(speech_total = total)
+  rename(speech_total = total) %>%
+  DT::datatable()
 ```
 
 The first thing we do is count the number of times each word occurs in each speech, and also the total number of words in each speech. What can we do with this information?
@@ -249,7 +250,7 @@ idftib <- tibble(
   `Inverse document frequency (IDF)` = log(`Total number of documents`/`Word in X documents`),
   `Unlogged IDF` = `Total number of documents`/`Word in X documents`
 )
-idftib
+DT::datatable(idftib)
 ```
 ```{r echo=FALSE, fig.cap="If a word appears in 8 documents, how does the IDF change as we increase the number of documents?"}
 idftib %>%
@@ -315,7 +316,8 @@ Looks messy, let's talk it through. Generally, TF-IDF seems to have pulled out w
 at_words %>%
   select(-total) %>%
   arrange(desc(tf_idf)) %>%
-  head(10)
+  head(10) %>%
+  DT::datatable()
 ```
 
 I'll put it down to the absurdity of the universe that "bullet", "minorities" and "bodies" appeared as the top three most important words, and try not to worry too much about it.
@@ -324,7 +326,7 @@ I'll put it down to the absurdity of the universe that "bullet", "minorities" an
 
 #### Hansard timeline using TF-IDF
 
-We are going to use TF-IDF as a way to summarise texts. We have seen how this is like pulling important words from a "bag of words" (each speech). The meaning from the context which the words were used in is inevitably lost, but it's a useful heuristic and the way TF-IDF is calculated is transparent (not a black box). 
+We are going to use TF-IDF as a way to summarise the Hansard. We have seen how this is like pulling important words from a "bag of words" (each speech). The meaning from the context which the words were used in is inevitably lost, but it's a useful heuristic and the way TF-IDF is calculated is transparent (not a black box). 
 
 Below is a pretty cool graphic (**Open it in a new tab!**), where I've extracted the word with the largest TF-IDF from each speech longer than 50 (non-stop-word) words and displayed them chronologically. The size of the word represents its TF-IDF. 
 
@@ -368,4 +370,6 @@ So TF-IDF is a pretty cool method for finding out the most important words in a 
 
 ### Conclusions
 
-In this article, we have explored how simply counting the number of words in speeches can reveal things about a Hansard. We talked in detail about how we can use these counts to create a useful scoring system (TF-IDF) for finding important words in documents, culminating in a summarised timeline of topics discussed in the Hansard. We also talked about the limitations of this method. But this is barely scratching the surface of what can be achieved using text mining. More advanced methods are available, and the amount you can learn using simpler techniques can often be extended if you apply them more creatively. Next time we will discuss how ideas like bigrams, regular expressions searches, sentiment analysis, latent dirichlet allocation and more can be used to glean information from the Hansard. 
+In this article, we have explored how simply counting the number of words in speeches can reveal things about a Hansard. We talked in detail about how we can use these counts to create a useful scoring system (TF-IDF) for finding important words in documents, culminating in a summarised timeline of topics discussed in the Hansard. We also talked about the limitations of this method. What did we find out about Britain's withdrawal from the EU based on this Hansard? Figures 2 and 3 told us something about how we can think about the contribution of different Lords to the debate by looking at the number of speeches they make and the number of words they use. We then saw how TF-IDF can be used to distinguish important words for each speaker. Common themes for this debate appeared to be nuclear energy, the 'trade-off' of rights of EU citizens and British nationals, the future roles of devolved administrations, and what Parliament's role is in all this. 
+
+But this is barely scratching the surface of what can be achieved using text mining. More advanced methods are available, and the amount you can learn using simpler techniques can often be extended if you apply them more creatively. Next time we will discuss how ideas like bigrams, regular expressions searches, sentiment analysis, latent dirichlet allocation and more can be used to glean information from the Hansard. Here is a link to the [github page](https://github.com/mogs-git/eu_hansard) for this project if you'd like to look at the code. Please send feedback to mchaib[dot]blog[at]gmail[dot]com.
